@@ -129,9 +129,6 @@ class Tiles:
         
     def add_tile_list(self, lst):
         self.tiles.extend(lst)
-        
-    def one_of_each(self):
-        self.add_tiles('123456789m123456789p123456789s1234567z')
                 
     def __str__(self):
         suits = ['m', 'p', 's', 'z']
@@ -184,6 +181,12 @@ class Wall(Tiles):
         self.remove_tiles(draw)
         return draw
         
+class OneOfEach(Tiles):
+    
+    def __init__(self):
+        Tiles.__init__(self)
+        self.add_tiles('123456789m123456789p123456789s1234567z')
+    
 class Dora(Tiles):
     
     def __init__(self):
@@ -235,7 +238,8 @@ class Player:
         self.melds = Melds()
         self.discards = Discards()
         self.total_discards = Discards()
-        self.riichi = False
+        self.in_riichi = False
+        self.double_riichi = False
         
     def __str__(self):
         return str(self.hand) + ' ' + str(self.melds)
@@ -410,11 +414,144 @@ class Player:
         
     def furiten(self):
         return any(tile in winning_tiles(str(self.hand)) for tile in self.total_discards.tiles)
+    
+    def riichi(self):
+        if winning_tiles(self.hand):
+            self.in_riichi == True
+        else:
+            return False
+        
+    def ron(self, discard):
+        if discard in winning_tiles(self.hand) and self.furiten() == False:
+            calculator = HandCalculator()
+            #if (one round or less):
+            #   ippatsu = True
+            #if (is last tile in wall):
+            #   houtei = True
+            #if (no actions previously):
+            #   renhou = True
+            #if (shominkan):
+            #   chankan = True
+            #player wind
+            #round wind
+            ippatsu = False
+            houtei = False
+            renhou = False
+            chankan = False
+            player_wind = None
+            round_wind = None
+            config = HandConfig(is_riichi = self.in_riichi,\
+                                is_ippatsu = ippatsu,\
+                                is_daburu_riichi = self.double_riichi,\
+                                is_houtei = houtei,\
+                                is_renhou = renhou,\
+                                is_chankan = chankan,\
+                                player_wind = player_wind,\
+                                round_wind = round_wind\
+                                )
+            
+            melds = []
+            meld_string = ''
+            for meld in self.melds.melds:
+                opened = True
+                if len(meld) == 4:
+                    meld_type = mjMeld.KAN
+                    opened = meld.opened
+                elif meld.tiles.count(meld.tiles[0]) == 3:
+                    meld_type = mjMeld.PON
+                else:
+                    meld_type = mjMeld.CHII
+                    
+                    #not sure if the meld_type is necessary, but since it's not a hassle i'll leave it in
+                new_meld = mjMeld(meld_type = meld_type,\
+                                  tiles = TilesConverter.one_line_string_to_136_array(str(meld)),\
+                                  opened = opened)
+                melds.append(new_meld)
+                
+                #really dumb workaround because the hand is supposed to be exactly 14 tiles
+                #and adding the kan as a string directly to the rest of the hand
+                #causes the hand to exceed 14 tiles
+                
+                #this would subtract by 4 if len(meld) referred to the length of the
+                #string associated with the meld, but len(meld) actually refers
+                #to the number of tiles in the meld (aka it ignores the suit)
+                #so the length of '222p' is 3 and the length of '1111m' is 4
+                meld_string += str(meld)[len(meld)-3:]
+                
+            hand = TilesConverter.one_line_string_to_136_array(str(self.hand) + str(discard) + str(meld_string))
+            discard = TilesConverter.one_line_string_to_136_array(str(discard))[0]
+            
+            result = calculator.estimate_hand_value(hand, discard, melds = melds, config = config)
+            if result.yaku:
+                return result
+            else:
+                return 'No yaku'
+        else:
+            return False
+    
+    def tsumo(self, draw):
+        if draw in winning_tiles(self.hand):
+            calculator = HandCalculator()
+            ippatsu = False
+            haitei = False
+            tenhou = False
+            chiihou = False
+            player_wind = None
+            round_wind = None
+            config = HandConfig(is_tsumo = True,\
+                                is_riichi = self.in_riichi,\
+                                is_ippatsu = ippatsu,\
+                                is_haitei = haitei,\
+                                is_daburu_riichi = self.double_riichi,\
+                                is_tenhou = tenhou,\
+                                is_chiihou = chiihou,\
+                                player_wind = player_wind,\
+                                round_wind = round_wind
+                                )
+            
+            melds = []
+            meld_string = ''
+            for meld in self.melds.melds:
+                opened = True
+                if len(meld) == 4:
+                    meld_type = mjMeld.KAN
+                    opened = meld.opened
+                elif meld.tiles.count(meld.tiles[0]) == 3:
+                    meld_type = mjMeld.PON
+                else:
+                    meld_type = mjMeld.CHII
+                    
+                    #not sure if the meld_type is necessary, but since it's not a hassle i'll leave it in
+                new_meld = mjMeld(meld_type = meld_type,\
+                                  tiles = TilesConverter.one_line_string_to_136_array(str(meld)),\
+                                  opened = opened)
+                melds.append(new_meld)
+                
+                #really dumb workaround because the hand is supposed to be exactly 14 tiles
+                #and adding the kan as a string directly to the rest of the hand
+                #causes the hand to exceed 14 tiles
+                
+                #this would subtract by 4 if len(meld) referred to the length of the
+                #string associated with the meld, but len(meld) actually refers
+                #to the number of tiles in the meld (aka it ignores the suit)
+                #so the length of '222p' is 3 and the length of '1111m' is 4
+                meld_string += str(meld)[len(meld)-3:]
+                
+            hand = TilesConverter.one_line_string_to_136_array(str(self.hand) + str(draw) + str(meld_string))
+            draw = TilesConverter.one_line_string_to_136_array(str(draw))[0]
+            result = calculator.estimate_hand_value(hand, draw, melds = melds, config = config)
+            if result.yaku:
+                return result
+            else:
+                return 'No yaku'
+        else:
+            return False
+            
+            
         
 def winning_tiles(tiles):
     if isinstance(tiles,str):
-        test_tiles = Tiles()
-        test_tiles.one_of_each()
+        test_tiles = OneOfEach()
         return [tile for tile in test_tiles.tiles if shanten_calculator(tiles + str(tile)) == -1]
     elif issubclass(type(tiles),Tiles):
         return winning_tiles(str(tiles))
@@ -425,8 +562,7 @@ def winning_tiles(tiles):
     
 def ukeire(tiles):
     if isinstance(tiles,str):
-        test_tiles = Tiles()
-        test_tiles.one_of_each()
+        test_tiles = OneOfEach()
         shanten = [shanten_calculator(str(tiles) + str(tile)) for tile in test_tiles.tiles]
         return [tile for index, tile in enumerate(test_tiles.tiles) if shanten[index] == min(shanten)]
     elif issubclass(type(tiles),Tiles):
@@ -435,7 +571,6 @@ def ukeire(tiles):
         temp = Tiles()
         temp.add_tiles(tiles)
         return ukeire(str(temp))
-    
         
 def hand_calculator(tiles, win_tile, config = HandConfig()):
     calculator = HandCalculator()
