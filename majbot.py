@@ -19,23 +19,65 @@ from mahjong.hand_calculating.hand_config import HandConfig
 from mahjong.meld import Meld as mjMeld
 from mahjong.shanten import Shanten
 
+from mahjong.constants import EAST, SOUTH, WEST, NORTH
+
 luck_min = -100
 luck_max = 100
+
+class Match:
+    
+    def __init__(self, players, aka = 3):
+        self.player_order = random.sample(players, 4)
+        self.round_wind = EAST
+        self.round_number = 1
+        self.aka = aka
+        
+    def round_progression(self):
+        wind_rotation = [EAST, SOUTH, WEST, NORTH, EAST]
+        self.round_number += 1
+        if self.round_number == 5:
+            self.round_number = 1
+            self.round_wind = wind_rotation[wind_rotation.index(self.round_wind) + 1]
+        players = self.player_order[1:]
+        players.append(self.player_order[0])
+        self.player_order = players
+    
+    def begin_game(self):
+        
+        game = Game(self.player_order, self.aka)
 
 class Game:
     
     def __init__(self, players, aka = 3):
         self.wall = Wall(aka)
+        
         self.east = players[0]
+        self.east.seat = EAST
         self.south = players[1]
+        self.south.seat = SOUTH
         self.west = players[2]
+        self.west.seat = WEST
         self.north = players[3]
+        self.north.seat = NORTH
+        
+        self.wall.deal_hand(self.east)
+        self.wall.deal_hand(self.south)
+        self.wall.deal_hand(self.west)
+        self.wall.deal_hand(self.north)
+        
         self.active_player = self.east
+        
         self.dora = Dora()
         self.ura_dora = Dora()
-        self.dora_tiles = Tiles()
+        self.wall.dora(self.dora)
+        self.wall.dora(self.ura_dora)
+        
+        #que
+        #self.dora_tiles = Tiles()
                     
-    def dora_indicator(self):
+    def add_dora(self):
+        self.wall.dora(self.dora)
+        self.wall.dora(self.ura_dora)
         return
     
     def turn_progress(self):
@@ -229,9 +271,10 @@ class Discards(Tiles):
 
 class Player:
     
-    def __init__(self, name, disc_id, luck = 0, points = 25000):
+    def __init__(self, name, disc_id, seat = None, luck = 0, points = 25000):
         self.name = name
         self.disc_id = disc_id
+        self.seat = seat
         self.luck = luck
         self.points = points
         self.hand = Hand()
@@ -240,6 +283,10 @@ class Player:
         self.total_discards = Discards()
         self.in_riichi = False
         self.double_riichi = False
+        self.ippatsu = False
+        self.tenhou = True
+        self.chiihou = True
+        self.renhou = True
         
     def __str__(self):
         return str(self.hand) + ' ' + str(self.melds)
@@ -322,7 +369,7 @@ class Player:
             return search
         return False
             
-    def chii(self, discard):
+    def chii(self, discard, game):
         chii_tiles = self.chii_tiles(discard)
         if chii_tiles:
             if len(chii_tiles) > 1:
@@ -336,7 +383,7 @@ class Player:
                     matching = [meld for meld in chii_tiles if choice == str(meld)]
                     if matching:
                         match = matching[0]
-                        meld = Meld(match, called = discard, opened = True)#TODO: who = global.player)
+                        meld = Meld(match, called = discard, opened = True, who = game.active_player)
                         self.melds.add_meld(meld)
                         match.remove_tiles(discard)
                         self.hand.remove_tiles(match)
@@ -344,14 +391,14 @@ class Player:
                         return False
             else:
                 match = chii_tiles[0]
-                meld = Meld(match, called = discard, opened = True)#TODO: who = global.player)
+                meld = Meld(match, called = discard, opened = True, who = game.active_player)
                 self.melds.add_meld(meld)
                 match.remove_tiles(discard)
                 self.hand.remove_tiles(match)
         else:
             return False
         
-    def pon(self, discard):
+    def pon(self, discard, game):
         pon_tiles = self.pon_tiles(discard)
         if pon_tiles:
             if len(pon_tiles) > 2 and discard.true_value == 5 and discard.value != '0':
@@ -362,26 +409,29 @@ class Player:
                 if choice == 'cancel':
                     return False
                 elif choice == 'y' or choice == 'yes':
-                    meld = Meld([discard,red_five[0], reg_five[0]], called = discard, opened = True)#TODO: who = global.player)
+                    meld = Meld([discard,red_five[0], reg_five[0]], called = discard,\
+                                opened = True, who = game.active_player)
                     self.melds.add_meld(meld)
                     self.hand.remove_tiles([red_five[0], reg_five[0]])
                 elif choice == 'n' or choice == 'no':
-                    meld = Meld([discard, reg_five[0], reg_five[1]], called = discard, opened = True)#TODO: who = global.player)
+                    meld = Meld([discard, reg_five[0], reg_five[1]], called = discard,\
+                                opened = True, who = game.active_player)
                     self.melds.add_meld(meld)
                     self.hand.remove_tiles(reg_five)
             else:
-                meld = Meld([discard, pon_tiles[0], pon_tiles[1]], called = discard, opened = True)#TODO: who = global.player)
+                meld = Meld([discard, pon_tiles[0], pon_tiles[1]], called = discard,\
+                            opened = True, who = game.active_player)
                 self.melds.add_meld(meld)
                 self.hand.remove_tiles(pon_tiles[:2])
         else:
             return False
         
-    def okan(self, discard):
+    def okan(self, discard, game):
         okan_tiles = self.okan_tiles(discard)
         if okan_tiles:
             self.hand.remove_tiles(okan_tiles)
             okan_tiles.append(discard)
-            meld = Meld(okan_tiles, called = discard, opened = True)#TODO: who = global.player)
+            meld = Meld(okan_tiles, called = discard, opened = True, who = game.active_player)
             self.melds.add_meld(meld)
         else:
             return False
@@ -416,16 +466,27 @@ class Player:
         return any(tile in winning_tiles(str(self.hand)) for tile in self.total_discards.tiles)
     
     def riichi(self):
+        
+        #this *should* check the hand to make sure its closed        
+        opened = [meld for meld in self.melds.melds if meld.opened]
+        if opened:
+            return False
+        
         if winning_tiles(self.hand):
             self.in_riichi == True
         else:
             return False
         
-    def ron(self, discard):
+    def ron(self, discard, game):
         if discard in winning_tiles(self.hand) and self.furiten() == False:
+            
+            dora = str(game.dora)
+            if self.in_riichi:
+                dora += str(game.ura_dora)
+                
+            dora_indicators = TilesConverter.one_line_string_to_136_array(dora)
+            
             calculator = HandCalculator()
-            #if (one round or less):
-            #   ippatsu = True
             #if (is last tile in wall):
             #   houtei = True
             #if (no actions previously):
@@ -434,19 +495,18 @@ class Player:
             #   chankan = True
             #player wind
             #round wind
-            ippatsu = False
             houtei = False
             renhou = False
             chankan = False
             player_wind = None
             round_wind = None
             config = HandConfig(is_riichi = self.in_riichi,\
-                                is_ippatsu = ippatsu,\
+                                is_ippatsu = self.ippatsu,\
                                 is_daburu_riichi = self.double_riichi,\
                                 is_houtei = houtei,\
                                 is_renhou = renhou,\
                                 is_chankan = chankan,\
-                                player_wind = player_wind,\
+                                player_wind = self.seat,\
                                 round_wind = round_wind\
                                 )
             
@@ -481,7 +541,8 @@ class Player:
             hand = TilesConverter.one_line_string_to_136_array(str(self.hand) + str(discard) + str(meld_string))
             discard = TilesConverter.one_line_string_to_136_array(str(discard))[0]
             
-            result = calculator.estimate_hand_value(hand, discard, melds = melds, config = config)
+            result = calculator.estimate_hand_value(hand, discard, melds = melds, \
+                                                    dora_indicators = dora_indicators, config = config)
             if result.yaku:
                 return result
             else:
@@ -489,23 +550,41 @@ class Player:
         else:
             return False
     
-    def tsumo(self, draw):
+    def tsumo(self, draw, game):
         if draw in winning_tiles(self.hand):
             calculator = HandCalculator()
-            ippatsu = False
+            
+            dora = str(game.dora)
+            if self.in_riichi:
+                dora += str(game.ura_dora)
+                
+            dora_indicators = TilesConverter.one_line_string_to_136_array(dora)
+        
+            #if (is last tile in wall):
+            #   haitei = True
+            #if (no actions previously):
+            #   if (is dealer):
+            #       tenhou = True
+            #   else:
+            #       chiihou = True
+            #if ():
+            #   chankan = True
+            #player wind
+            #round wind
+            rinshan = False
             haitei = False
             tenhou = False
             chiihou = False
-            player_wind = None
             round_wind = None
             config = HandConfig(is_tsumo = True,\
                                 is_riichi = self.in_riichi,\
-                                is_ippatsu = ippatsu,\
+                                is_ippatsu = self.ippatsu,\
+                                is_rinshan = rinshan,\
                                 is_haitei = haitei,\
                                 is_daburu_riichi = self.double_riichi,\
                                 is_tenhou = tenhou,\
                                 is_chiihou = chiihou,\
-                                player_wind = player_wind,\
+                                player_wind = self.seat,\
                                 round_wind = round_wind
                                 )
             
@@ -539,7 +618,8 @@ class Player:
                 
             hand = TilesConverter.one_line_string_to_136_array(str(self.hand) + str(draw) + str(meld_string))
             draw = TilesConverter.one_line_string_to_136_array(str(draw))[0]
-            result = calculator.estimate_hand_value(hand, draw, melds = melds, config = config)
+            result = calculator.estimate_hand_value(hand, draw, melds = melds, \
+                                                    dora_indicators = dora_indicators, config = config)
             if result.yaku:
                 return result
             else:
@@ -551,6 +631,7 @@ class Player:
         
 def winning_tiles(tiles):
     if isinstance(tiles,str):
+        tiles = tiles.replace(' ','')
         test_tiles = OneOfEach()
         return [tile for tile in test_tiles.tiles if shanten_calculator(tiles + str(tile)) == -1]
     elif issubclass(type(tiles),Tiles):
@@ -562,6 +643,7 @@ def winning_tiles(tiles):
     
 def ukeire(tiles):
     if isinstance(tiles,str):
+        tiles = tiles.replace(' ','')
         test_tiles = OneOfEach()
         shanten = [shanten_calculator(str(tiles) + str(tile)) for tile in test_tiles.tiles]
         return [tile for index, tile in enumerate(test_tiles.tiles) if shanten[index] == min(shanten)]
