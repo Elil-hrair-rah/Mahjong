@@ -20,6 +20,10 @@ from mahjong.shanten import Shanten
 
 from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
+#from graphics import makeImage, makeYamaImage
+from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
+from functions import winning_tiles
+
 class Player:
     
     def __init__(self, name, disc_id, seat = None, luck = 0, points = 25000):
@@ -41,6 +45,31 @@ class Player:
         
     def __str__(self):
         return str(self.hand) + ' ' + str(self.melds)
+    
+    def draw_tile(self, wall):
+        draw = wall.draw_tile(self)
+        #image = makeImage(' '.join([str(self.hand), str(draw)]))
+        self.hand.add_tiles(draw)
+        
+    def discard_tile(self, discard):
+        self.hand.remove_tiles(discard)
+        self.total_discards.add_tile(discard)
+        #if tile is not stolen:
+        self.discards.add_tile(discard)
+        
+    #TODO: account for melds
+    def draw_discard(self, wall):
+        draw = wall.draw_tile(self)
+        #image = makeImage(' '.join([str(self.hand), str(draw)]))
+        print("What tile do you want to discard?")
+        print(str(self.hand) + ' ' + str(draw))
+        discard = input()
+        discard = Tile(discard[0],discard[1])
+        #if discard == draw:
+        #    image = makeImage(' '.join(['xxxxxxxxxxxxxz', str(discard)]))
+        #else:
+        #    location = random.randint(1,13)
+        #    image = makeImage(' '.join(['x' * location + 'z', 'x' * (13 - location) + 'z', str(discard)]))
     
     def chii_tiles(self, discard):
         if discard.suit == 'z':
@@ -134,7 +163,7 @@ class Player:
                     matching = [meld for meld in chii_tiles if choice == str(meld)]
                     if matching:
                         match = matching[0]
-                        meld = Meld(match, called = discard, opened = True, who = game.active_player)
+                        meld = Meld(match, called = discard, opened = True, who = "L")
                         self.melds.add_meld(meld)
                         match.remove_tiles(discard)
                         self.hand.remove_tiles(match)
@@ -142,7 +171,7 @@ class Player:
                         return False
             else:
                 match = chii_tiles[0]
-                meld = Meld(match, called = discard, opened = True, who = game.active_player)
+                meld = Meld(match, called = discard, opened = True, who = "L")
                 self.melds.add_meld(meld)
                 match.remove_tiles(discard)
                 self.hand.remove_tiles(match)
@@ -152,6 +181,11 @@ class Player:
     def pon(self, discard, game):
         pon_tiles = self.pon_tiles(discard)
         if pon_tiles:
+            rotation = [EAST, SOUTH, WEST, NORTH]
+            relative_direction = ["N", "L", "M", "R"]
+            who = rotation.index(self.seat) - rotation.index(game.active_player.seat)
+            who = relative_direction[who % 4]
+            
             if len(pon_tiles) > 2 and discard.true_value == 5 and discard.value != '0':
                 red_five = [tile for tile in pon_tiles if tile.value == '0']
                 reg_five = [tile for tile in pon_tiles if tile.value == '5']
@@ -161,17 +195,17 @@ class Player:
                     return False
                 elif choice == 'y' or choice == 'yes':
                     meld = Meld([discard,red_five[0], reg_five[0]], called = discard,\
-                                opened = True, who = game.active_player)
+                                opened = True, who = who)
                     self.melds.add_meld(meld)
                     self.hand.remove_tiles([red_five[0], reg_five[0]])
                 elif choice == 'n' or choice == 'no':
                     meld = Meld([discard, reg_five[0], reg_five[1]], called = discard,\
-                                opened = True, who = game.active_player)
+                                opened = True, who = who)
                     self.melds.add_meld(meld)
                     self.hand.remove_tiles(reg_five)
             else:
                 meld = Meld([discard, pon_tiles[0], pon_tiles[1]], called = discard,\
-                            opened = True, who = game.active_player)
+                            opened = True, who = who)
                 self.melds.add_meld(meld)
                 self.hand.remove_tiles(pon_tiles[:2])
         else:
@@ -180,9 +214,14 @@ class Player:
     def okan(self, discard, game):
         okan_tiles = self.okan_tiles(discard)
         if okan_tiles:
+            rotation = [EAST, SOUTH, WEST, NORTH]
+            relative_direction = ["N", "L", "M", "R"]
+            who = rotation.index(self.seat) - rotation.index(game.active_player.seat)
+            who = relative_direction[who % 4]
+            
             self.hand.remove_tiles(okan_tiles)
             okan_tiles.append(discard)
-            meld = Meld(okan_tiles, called = discard, opened = True, who = game.active_player)
+            meld = Meld(okan_tiles, called = discard, opened = True, who = who)
             self.melds.add_meld(meld)
         else:
             return False
@@ -205,6 +244,7 @@ class Player:
                 
             if len(chosen_kan) == 2:
                 chosen_kan[0].add_tiles(chosen_kan[1])
+                chosen_kan[0].shominkan = True
                 self.hand.remove_tiles(chosen_kan[1])
             else:
                 meld = Meld(chosen_kan, opened = False)

@@ -20,6 +20,9 @@ from mahjong.shanten import Shanten
 
 from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
+luck_min = -100
+luck_max = 100
+
 class Tile:
     
     def __init__(self, value, suit):
@@ -136,6 +139,7 @@ class Wall(Tiles):
             self.replace_tiles('0s', '5s')
         if aka == 4:
             self.replace_tiles('0p', '5p')
+        self.remaining = 70
             
     def deal_hand(self, player):
         hand = random.sample(self.tiles, 13)
@@ -157,6 +161,7 @@ class Wall(Tiles):
                 weights = tile.influence(weights, self, player.luck)
             draw = random.choices(self.tiles, weights = weights, k = 1)[0]
         self.remove_tiles(draw)
+        self.remaining -= 1
         return draw
         
 class OneOfEach(Tiles):
@@ -183,6 +188,7 @@ class Meld(Tiles):
         self.called = called
         self.who = who
         self.opened = opened
+        self.shominkan = False
 #        if called:
 #            self.tiles.append(called)
         

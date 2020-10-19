@@ -24,8 +24,7 @@ from mahjong.constants import EAST, SOUTH, WEST, NORTH
 from player import Player
 from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
 
-luck_min = -100
-luck_max = 100
+
 
 class Match:
     
@@ -89,92 +88,11 @@ class Game:
         
             
         
-def winning_tiles(tiles):
-    if isinstance(tiles,str):
-        tiles = tiles.replace(' ','')
-        test_tiles = OneOfEach()
-        return [tile for tile in test_tiles.tiles if shanten_calculator(tiles + str(tile)) == -1]
-    elif issubclass(type(tiles),Tiles):
-        return winning_tiles(str(tiles))
-    elif isinstance(tiles,list):
-        temp = Tiles()
-        temp.add_tiles(tiles)
-        return winning_tiles(str(temp))
-    
-def ukeire(tiles):
-    if isinstance(tiles,str):
-        tiles = tiles.replace(' ','')
-        test_tiles = OneOfEach()
-        shanten = [shanten_calculator(str(tiles) + str(tile)) for tile in test_tiles.tiles]
-        return [tile for index, tile in enumerate(test_tiles.tiles) if shanten[index] == min(shanten)]
-    elif issubclass(type(tiles),Tiles):
-        return ukeire(str(tiles))
-    elif isinstance(tiles,list):
-        temp = Tiles()
-        temp.add_tiles(tiles)
-        return ukeire(str(temp))
-        
-def hand_calculator(tiles, win_tile, config = HandConfig()):
-    calculator = HandCalculator()
-    tiles = TilesConverter.one_line_string_to_136_array(str(tiles))
-    win_tile = TilesConverter.one_line_string_to_136_array(str(win_tile))[0]
-    return calculator.estimate_hand_value(tiles, win_tile, config = config)
-
-def shanten_calculator(tiles):
-    shanten = Shanten()
-    tiles = TilesConverter.one_line_string_to_34_array(str(tiles))
-    result = shanten.calculate_shanten(tiles)
-    return result
 
 
 
-def makeImage(text):
-    if not text:
-        return 0
-    image_list = []
-    parts = text.split(' ')
-    for i in range(len(parts)):
-        part = parts[i]
-        results = re.findall(r'([0-9x]+[mpsz])', part)
-        if part == parts[0]:
-            results = list(
-                reduce(list.__add__,
-                       [['{}{}'.format(x, result[-1]) for x in result[:-1]]
-                        for result in results]))
-            results = sorted(sorted(results), key=lambda x: x[-1])
-        for result in results:
-            image_list += [
-                './ui/{}{}.png'.format(x, result[-1]) for x in result[:-1]
-            ]
-        image_list.append('./ui/0.png')
-    # print(image_list)
-    imagefile = [Image.open(x) for x in image_list]
-    target = Image.new('RGBA', (len(image_list) * 80, 130))
-    left = 0
-    for img in imagefile:
-        target.paste(img, (left, 0))
-        left += img.size[0]
-    target.save('{}.png'.format(text.replace(' ', '_')), quality=100)
 
 
-def makeYamaImage(text):
-    if text:
-        image_list = []
-        results = re.findall(r'([0-9x]+[mpsz])', text)
-        for result in results:
-            image_list += [
-                './ui/{}{}.png'.format(x, result[-1]) for x in result[:-1]
-            ]
-        imagefile = [Image.open(x) for x in image_list
-                     ] + (5 - len(image_list)) * [Image.open('./ui/xz.png')]
-    else:
-        imagefile = 5 * [Image.open('./ui/xz.png')]
-    target = Image.new('RGBA', (5 * 80, 130))
-    left = 0
-    for img in imagefile:
-        target.paste(img, (left, 0))
-        left += img.size[0]
-    target.save('{}.png'.format(text if text else 'Yama'), quality=100)
 
 calculator = HandCalculator()
 config = HandConfig()
