@@ -114,16 +114,60 @@ def player_image(player, *args):
                 ]
             image_list.append('./ui/0.png')
         
-        ref = []
+        refs = []
         for block in rotated:
-            ref.extend(block)
-            ref.append(0)
-        del ref[-1]
+            refs.extend(block)
+            refs.append(0)
+        del refs[-1]
         
         #return image_list, ref
         
-        for image, refs in zip(image_list, ref):
-            print(image, refs)
+        imagefile = [Image.open(x) for x in image_list]
+        
+        image_length = refs.count(0) * 80 + refs.count(1) * 130
+        if refs.count(2): image_height = 260 
+        else: image_height = 130
+        
+        target = Image.new('RGBA', (image_length, image_height))
+        left = 0
+        for image, ref in zip(imagefile, refs):
+            
+            bottom = 0 + image.size[1]
+            
+            if ref:
+                image = image.rotate(90, expand = True)
+            
+            if ref:
+                bottom += image.size[0] - image.size[1]
+            if ref == 2:
+                bottom -= image.size[1]
+                left -= image.size[0]
+                
+            target.paste(image, (left, bottom))
+            
+            left += image.size[0]
+            
+            '''
+            if ref:
+
+                
+                image = image.transpose(Image.ROTATE_90)
+                image = image.transpose(Image.ROTATE_90)
+                image = image.transpose(Image.ROTATE_90)
+            
+            if ref:
+                bottom += image.size[0] - image.size[1]
+            if ref == 2:
+                bottom -= image.size[1]
+                target.paste(image, (left-image.size[0], bottom))
+            else:
+                target.paste(image, (left, bottom))
+            
+            left += image.size[0]
+            '''
+            
+        target.save('{}-{}.png'.format(player.name, player.disc_id), quality=100)
+                
             
             
         

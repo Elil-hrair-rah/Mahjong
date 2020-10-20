@@ -144,7 +144,7 @@ class Player:
         if pon:
             for meld in pon:
                 if meld.tiles[0] in self.hand.tiles:
-                    search.append([meld, meld.tiles[0]])
+                    search.append([meld, [tile for tile in self.hand.tiles if tile == meld.tiles[0]][0]])
         if search:
             return search
         return False
@@ -245,6 +245,7 @@ class Player:
             if len(chosen_kan) == 2:
                 chosen_kan[0].add_tiles(chosen_kan[1])
                 chosen_kan[0].shominkan = True
+                chosen_kan[0].shominkan_tile = chosen_kan[1]
                 self.hand.remove_tiles(chosen_kan[1])
             else:
                 meld = Meld(chosen_kan, opened = False)
@@ -260,11 +261,13 @@ class Player:
         
         #this *should* check the hand to make sure its closed        
         opened = [meld for meld in self.melds.melds if meld.opened]
+        
         if opened:
             return False
         
-        if winning_tiles(self.hand):
+        if winning_tiles(self.hand) and self.points >= 1000:
             self.in_riichi == True
+            self.points -= 1000
         else:
             return False
         
