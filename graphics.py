@@ -56,8 +56,17 @@ def player_image(player, *args):
         rotated = []
         rotated.append([0 for tile in player.hand.tiles])
         for arg in args:
-            parts.append(arg)
-            rotated.append([0 for tile in Tiles(arg).tiles])
+            if isinstance(arg, Tiles):
+                rotated.append([0 for tile in arg.tiles])
+                parts.append(str(arg))
+            elif isinstance(arg, Tile):
+                rotated.append([0])
+                parts.append(str(arg))
+            else:
+                parts.append(arg)
+                tiles = Tiles()
+                tiles.add_tiles(arg)
+                rotated.append([0 for tile in tiles.tiles])
         for meld in player.melds.melds:
             rotation = {'L': [1, 0, 0], 'M': [0, 1, 0], 'R': [0, 0, 1]}
             if meld.who:
@@ -68,7 +77,6 @@ def player_image(player, *args):
                 elif len(meld) == 4:
                     rotate.insert(2, 0)
                     
-
                 tiles = sorted(meld.tiles, key=lambda tile:tile.true_value)
                 remove = [index for index, tile in enumerate(tiles) if tile.suit == meld.called.suit and tile.value == meld.called.value]
                 del tiles[remove[0]]                
@@ -98,7 +106,6 @@ def player_image(player, *args):
                     
             rotated.append(rotate)
             parts.append(string)
-        #return rotated, parts
         
         image_list = []
         for part in parts:
@@ -120,56 +127,33 @@ def player_image(player, *args):
             refs.append(0)
         del refs[-1]
         
-        #return image_list, ref
-        
         imagefile = [Image.open(x) for x in image_list]
         
-        image_length = refs.count(0) * 80 + refs.count(1) * 130
-        if refs.count(2): image_height = 260 
-        else: image_height = 130
+        dim_x = imagefile[0].size[0]
+        dim_y = imagefile[0].size[1]
+        
+        image_length = refs.count(0) * dim_x + refs.count(1) * dim_y
+        if refs.count(2): image_height = 2 * dim_x
+        else: image_height = dim_y
         
         target = Image.new('RGBA', (image_length, image_height))
         left = 0
         for image, ref in zip(imagefile, refs):
             
-            bottom = 0 + image.size[1]
+            bottom = 0 + image_height - dim_y
             
             if ref:
                 image = image.rotate(90, expand = True)
-            
-            if ref:
-                bottom += image.size[0] - image.size[1]
+                bottom += dim_y - dim_x
             if ref == 2:
-                bottom -= image.size[1]
-                left -= image.size[0]
+                bottom -= dim_x
+                left -= dim_y
                 
             target.paste(image, (left, bottom))
             
             left += image.size[0]
             
-            '''
-            if ref:
-
-                
-                image = image.transpose(Image.ROTATE_90)
-                image = image.transpose(Image.ROTATE_90)
-                image = image.transpose(Image.ROTATE_90)
-            
-            if ref:
-                bottom += image.size[0] - image.size[1]
-            if ref == 2:
-                bottom -= image.size[1]
-                target.paste(image, (left-image.size[0], bottom))
-            else:
-                target.paste(image, (left, bottom))
-            
-            left += image.size[0]
-            '''
-            
         target.save('{}-{}.png'.format(player.name, player.disc_id), quality=100)
-                
-            
-            
         
     else:
         tiles = str(player.hand)
@@ -208,15 +192,7 @@ def makeImage(text):
     left = 0
     for img in imagefile:
         
-        #if rotated:
-        #img = img.rotate(270)
-        
         target.paste(img, (left, 0))
-        
-        #if img on top:
-        #   down += img.size[1]
-        #   target.paste(img, (left, down))
-
         
         left += img.size[0]
         
