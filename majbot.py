@@ -24,7 +24,8 @@ from mahjong.constants import EAST, SOUTH, WEST, NORTH
 from player import Player
 from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
 
-
+import discord
+from discord.ext import commands
 
 class Match:
     
@@ -194,3 +195,101 @@ def makeData(hand = '44455m', riichi = False):
         "dihe": False
     }
     return postdata
+
+
+pending_games = dict()
+active_users = []
+
+discordclient = commands.Bot(command_prefix = 'm!')
+
+intents = discord.Intents(messages = True, guilds = True, members = True)
+bot = commands.Bot(command_prefix='!', intents=intents)
+
+@discordclient.event
+async def on_ready():
+    print('Connected to bot: {}'.format(discordclient.user.name))
+    print('Bot ID: {}'.format(discordclient.user.id))
+
+
+@discordclient.event
+async def on_message(message):
+    if str(message.channel.type) == "private":
+        if message.author.id != discordclient.user.id:
+            print('is dm')
+            await message.channel.send('is dm')
+    await discordclient.process_commands(message)
+
+@discordclient.event
+async def on_reaction_add(reaction, user):
+    global pending_games
+    global active_users
+    if reaction.message.id in pending_games and reaction.emoji == '✅':
+        if user.id not in active_users and not user.id == discordclient.user.id:
+            pending_games[reaction.message.id].append(user)
+        if len(pending_games[reaction.message.id]) == 4:
+            active_users.extend(pending_games[reaction.message.id])
+            del pending_games[reaction.message.id]
+            await reaction.message.channel.send('game started')
+            
+            #TODO: start game
+            
+        
+@discordclient.event
+async def on_reaction_remove(reaction, user):
+    global pending_games
+    if reaction.message.id in pending_games and reaction.emoji == '✅':
+        if user.id in pending_games[reaction.message.id]:
+            pending_games[reaction.message.id].remove(user)
+
+@discordclient.command()
+async def dm(ctx, *arg):
+    if arg:
+        target = discordclient.get_user(int(arg[0]))
+        dm = target.dm_channel
+        if not dm:
+            await target.create_dm()
+        await dm.send('testing targeted dm functionality')
+    else:
+        await ctx.author.send('testing dm functionality')
+
+@discordclient.command()
+async def pending_dm(ctx, key):
+    for user in pending_games[int(key)]:
+        dm = user.dm_channel
+        if not dm:
+            dm = await user.create_dm()
+        await dm.send('testing targeted dm functionality')
+
+@discordclient.command()
+async def pending(ctx):
+    await ctx.send(pending_games)
+
+@discordclient.command()
+async def active(ctx):
+    await ctx.send(active_users)    
+
+@discordclient.command()
+async def game(ctx):
+    if str(ctx.message.channel.type) == "private":
+        await ctx.send("This command does not work in DMs, as a game of mahjong requires 4 people to play. AI functionality does not yet exist.")
+    else:
+        global pending_games
+        msg = await ctx.send("React to this message with ✅ to join the game. You cannot join a game while participating in another one.")
+        pending_games[msg.id] = []
+        await msg.add_reaction('✅')
+        
+@discordclient.command()
+async def invite(ctx):
+    ''' The invite link for this bot.
+    If the link doesn't work, it's probably because the bot is in 100 servers and I haven't verified it.
+    '''
+    print('https://discord.com/oauth2/authorize?client_id=769708017993121822&permissions=387136&scope=bot')
+    await ctx.send('https://discord.com/oauth2/authorize?client_id=769708017993121822&permissions=387136&scope=bot')
+
+@discordclient.command()
+async def os(ctx):
+    ''' The invite link for the official server.
+    It probably doesn't exist yet.
+    '''
+    
+discordclient.run("")
