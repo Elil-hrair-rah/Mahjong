@@ -22,7 +22,7 @@ from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
 #from graphics import makeImage, makeYamaImage
 from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
-from functions import winning_tiles
+from functions import shanten_calculator, winning_tiles 
 
 class Player:
     
@@ -53,9 +53,9 @@ class Player:
         
     def discard_tile(self, discard):
         self.hand.remove_tiles(discard)
-        self.total_discards.add_tile(discard)
+        self.total_discards.add_tiles(discard)
         #if tile is not stolen:
-        self.discards.add_tile(discard)
+        self.discards.add_tiles(discard)
         
     #TODO: account for melds
     def draw_discard(self, wall):
@@ -265,11 +265,40 @@ class Player:
         if opened:
             return False
         
-        if winning_tiles(self.hand) and self.points >= 1000:
+        #determine what tiles are discardable to be in tenpai
+        
+        shanten = shanten_calculator(self.hand)
+        if (shanten == 0 or shanten == -1) and self.points >= 1000 and not self.in_riichi:
+            riichi_tiles = []
+            for tile in self.hand.tiles:
+                temp = Tiles()
+                temp.tiles = self.hand.tiles[:]
+                temp.remove_tiles(tile)
+                if winning_tiles(temp):
+                    riichi_tiles.append(tile)
+            print("Which tile would you like to riichi on?\n")
+            for option in riichi_tiles:
+                print(option)
+            choice = input()
+            if choice == 'cancel':
+                return False
+            else:
+                riichi_tile = [tile for tile in riichi_tiles if str(tile) == choice]
+            if not riichi_tile:
+                return False
+            self.discard_tile(choice)
+            self.in_riichi = True
+            self.points -= 1000
+        else:
+            return False
+                
+        '''
+        if winning_tiles(self.hand) :
             self.in_riichi == True
             self.points -= 1000
         else:
             return False
+        '''
         
     def ron(self, discard, game):
         if discard in winning_tiles(self.hand) and self.furiten() == False:
