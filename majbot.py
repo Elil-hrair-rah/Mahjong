@@ -196,14 +196,47 @@ def makeData(hand = '44455m', riichi = False):
     }
     return postdata
 
+whitelist = [422108792923095050,
+             634524535957356574,
+             120552456626241536,
+             606746521538527234]
 
 pending_games = dict()
 active_users = []
-
-discordclient = commands.Bot(command_prefix = 'm!')
+pending_users = []
 
 intents = discord.Intents(messages = True, guilds = True, members = True)
-bot = commands.Bot(command_prefix='!', intents=intents)
+discordclient = commands.Bot(command_prefix = 'm!', intents = intents)
+
+
+async def user_input(query, player):
+    dm = player.disc_id.dm_channel
+    if not dm:
+        dm = await player.disc_id.create_dm()
+    await dm.send(query)
+    def check(msg):
+        return msg.channel == dm
+    response = await discordclient.wait_for('message', check = check, timeout = 25.0)
+    return response
+    
+@discordclient.command()
+async def input_test(ctx, args):
+    if ctx.author.id in whitelist:
+        player = Player('bob', ctx.author)
+        response = await user_input(args, player)
+        print(response.content)
+    else:
+        await ctx.send("Administrator command")
+
+@discordclient.command()
+async def player_input(ctx, args):
+    if ctx.author.id in whitelist:
+        player = Player('bob', ctx.author)
+        response = await player.user_input(args, discordclient)
+        print(response.content)
+    else:
+        await ctx.send("Administrator command")
+    
 
 @discordclient.event
 async def on_ready():
@@ -214,9 +247,12 @@ async def on_ready():
 @discordclient.event
 async def on_message(message):
     if str(message.channel.type) == "private":
-        if message.author.id != discordclient.user.id:
-            print('is dm')
-            await message.channel.send('is dm')
+        global pending_users
+        if message.author in pending_users:
+            await message.channel.send(message.content)
+            pending_users.remove(message.author)
+        #if message.author.id != discordclient.user.id:
+        #    await message.channel.send('is dm')
     await discordclient.process_commands(message)
 
 @discordclient.event
@@ -224,15 +260,20 @@ async def on_reaction_add(reaction, user):
     global pending_games
     global active_users
     if reaction.message.id in pending_games and reaction.emoji == '✅':
-        if user.id not in active_users and not user.id == discordclient.user.id:
+        if user not in active_users and not user.id == discordclient.user.id:
             pending_games[reaction.message.id].append(user)
         if len(pending_games[reaction.message.id]) == 4:
+            users = pending_games[reaction.message.id][:]
             active_users.extend(pending_games[reaction.message.id])
             del pending_games[reaction.message.id]
+            for user in users:
+                for ids in pending_games.values():
+                    try:
+                        ids.remove(user)
+                    except ValueError:
+                        pass
             await reaction.message.channel.send('game started')
-            
             #TODO: start game
-            
         
 @discordclient.event
 async def on_reaction_remove(reaction, user):
@@ -243,30 +284,60 @@ async def on_reaction_remove(reaction, user):
 
 @discordclient.command()
 async def dm(ctx, *arg):
-    if arg:
-        target = discordclient.get_user(int(arg[0]))
-        dm = target.dm_channel
-        if not dm:
-            await target.create_dm()
-        await dm.send('testing targeted dm functionality')
+    if ctx.author.id in whitelist:
+        if arg:
+            target = discordclient.get_user(int(arg[0]))
+            dm = target.dm_channel
+            if not dm:
+                await target.create_dm()
+            await dm.send('testing targeted dm functionality')
+        else:
+            await ctx.author.send('testing dm functionality')
     else:
-        await ctx.author.send('testing dm functionality')
+        await ctx.send("Administrator command")
+
 
 @discordclient.command()
 async def pending_dm(ctx, key):
-    for user in pending_games[int(key)]:
-        dm = user.dm_channel
-        if not dm:
-            dm = await user.create_dm()
-        await dm.send('testing targeted dm functionality')
+    if ctx.author.id in whitelist:
+        for user in pending_games[int(key)]:
+            dm = user.dm_channel
+            if not dm:
+                dm = await user.create_dm()
+            await dm.send('testing targeted dm functionality')
+    else:
+        await ctx.send("Administrator command")
 
 @discordclient.command()
-async def pending(ctx):
-    await ctx.send(pending_games)
+async def pending_game(ctx):
+    if ctx.author.id in whitelist:
+        await ctx.send(pending_games)
+    else:
+        await ctx.send("Administrator command")
 
 @discordclient.command()
-async def active(ctx):
-    await ctx.send(active_users)    
+async def active_user(ctx):
+    if ctx.author.id in whitelist:
+        await ctx.send(active_users)
+    else:
+        await ctx.send("Administrator command")
+
+@discordclient.command()
+async def pending_user(ctx):
+    if ctx.author.id in whitelist:
+        await ctx.send(pending_users)
+    else:
+        await ctx.send("Administrator command")
+        
+@discordclient.command()
+async def add_pending_user(ctx, arg):
+    global pending_users
+    if ctx.author.id in whitelist:
+        for user in active_users:
+            if int(arg) == user.id:
+                pending_users.append(user)
+    else:
+        await ctx.send("Administrator command")
 
 @discordclient.command()
 async def game(ctx):
@@ -291,5 +362,6 @@ async def os(ctx):
     ''' The invite link for the official server.
     It probably doesn't exist yet.
     '''
+    pass
     
-discordclient.run("")
+discordclient.run("NzY5NzA4MDE3OTkzMTIxODIy.X5S8cw.tSClXF6i-4i0Kl9bAyA3euDQciw")

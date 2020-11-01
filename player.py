@@ -24,11 +24,17 @@ from mahjong.constants import EAST, SOUTH, WEST, NORTH
 from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
 from functions import shanten_calculator, winning_tiles 
 
+
+
+
+
+
 class Player:
     
-    def __init__(self, name, disc_id, seat = None, luck = 0, points = 25000):
+    def __init__(self, name, disc_id, client, seat = None, luck = 0, points = 25000):
         self.name = name
         self.disc_id = disc_id
+        self.client = client
         self.seat = seat
         self.luck = luck
         self.points = points
@@ -58,12 +64,11 @@ class Player:
         self.discards.add_tiles(discard)
         
     #TODO: account for melds
-    def draw_discard(self, wall):
+    async def draw_discard(self, wall):
         draw = wall.draw_tile(self)
         #image = makeImage(' '.join([str(self.hand), str(draw)]))
-        print("What tile do you want to discard?")
-        print(str(self.hand) + ' ' + str(draw))
-        discard = input()
+        query = "What tile do you want to discard?\n" + str(self.hand) + ' ' + str(draw)
+        discard = await self.user_input(query)
         discard = Tile(discard[0],discard[1])
         #if discard == draw:
         #    image = makeImage(' '.join(['xxxxxxxxxxxxxz', str(discard)]))
@@ -149,14 +154,12 @@ class Player:
             return search
         return False
             
-    def chii(self, discard, game):
+    async def chii(self, discard, game):
         chii_tiles = self.chii_tiles(discard)
         if chii_tiles:
             if len(chii_tiles) > 1:
-                for options in chii_tiles:
-                    print(options)
-                print("Please choose your desired meld:")
-                choice = input()
+                query = "Please choose your desired meld:\n" + ' '.join(map(str, chii_tiles))
+                choice = await self.user_input(query)
                 if choice == 'cancel':
                     return False
                 else:
@@ -178,7 +181,7 @@ class Player:
         else:
             return False
         
-    def pon(self, discard, game):
+    async def pon(self, discard, game):
         pon_tiles = self.pon_tiles(discard)
         if pon_tiles:
             rotation = [EAST, SOUTH, WEST, NORTH]
@@ -189,8 +192,7 @@ class Player:
             if len(pon_tiles) > 2 and discard.true_value == 5 and discard.value != '0':
                 red_five = [tile for tile in pon_tiles if tile.value == '0']
                 reg_five = [tile for tile in pon_tiles if tile.value == '5']
-                print('Pon with red 5?')
-                choice = input()
+                choice = await self.user_input('Pon with red 5?')
                 if choice == 'cancel':
                     return False
                 elif choice == 'y' or choice == 'yes':
@@ -226,14 +228,12 @@ class Player:
         else:
             return False
         
-    def ckan(self):
+    async def ckan(self):
         ckan_tiles = self.ckan_tiles()
         if ckan_tiles:
             if len(ckan_tiles) > 1:
-                for option in ckan_tiles:
-                    print(option[1])
-                print('Which kan?')
-                choice = input()
+                query = 'Which kan?\n' + ' '.join(map(str, ckan_tiles))
+                choice = await self.user_input(query)
                 if choice == 'cancel':
                     return False
                 chosen_kan = [kan for kan in ckan_tiles if str(kan[1]) == choice][0]
@@ -257,7 +257,7 @@ class Player:
     def furiten(self):
         return any(tile in winning_tiles(str(self.hand)) for tile in self.total_discards.tiles)
     
-    def riichi(self):
+    async def riichi(self):
         
         #this *should* check the hand to make sure its closed        
         opened = [meld for meld in self.melds.melds if meld.opened]
@@ -276,10 +276,9 @@ class Player:
                 temp.remove_tiles(tile)
                 if winning_tiles(temp):
                     riichi_tiles.append(tile)
-            print("Which tile would you like to riichi on?\n")
-            for option in riichi_tiles:
-                print(option)
-            choice = input()
+            query = "Which tile would you like to riichi on?\n" + ' '.join(map(str, riichi_tiles))
+            print(query)
+            choice = await self.user_input(query)
             if choice == 'cancel':
                 return False
             else:
@@ -447,4 +446,13 @@ class Player:
         else:
             return False
             
-            
+    async def user_input(self, query):
+        dm = self.disc_id.dm_channel
+        if not dm:
+            dm = await self.disc_id.create_dm()
+        await dm.send(query)
+        def check(msg):
+            return msg.channel == dm and msg.author == self.disc_id
+        response = await self.client.wait_for('message', check = check, timeout = 25.0)
+        return response
+    
