@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import io
 import json
 import re
 from functools import reduce
@@ -25,9 +26,9 @@ from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discard
 
 ''' testing code
 
-alsonotbob = Player('anb',3)
-bob = Player('bob', 1)
-notbob = Player('notbob',2)
+alsonotbob = Player('anb',3, 1)
+bob = Player('bob', 1, 2)
+notbob = Player('notbob',2, 3)
 bob.hand.add_tiles('11p23s5505m666p777s123z')
 tile1 = Tile('1','p')
 tile2 = Tile('1','s')
@@ -35,14 +36,14 @@ tile3 = Tile('6','p')
 tile4 = Tile('7','s')
 bob.seat = SOUTH
 game = Game([notbob, alsonotbob, alsonotbob, alsonotbob])
-bob.pon(tile1, game)
-bob.chii(tile2, game)
+await bob.pon(tile1, game)
+await bob.chii(tile2, game)
 bob.seat = NORTH
-bob.ckan()
+await bob.ckan()
 bob.okan(tile3, game)
 bob.seat = WEST
-bob.pon(tile4, game)
-bob.ckan()
+await bob.pon(tile4, game)
+await bob.ckan()
 
 '''
 
@@ -153,20 +154,19 @@ def player_image(player, *args):
             
             left += image.size[0]
             
-        target.save('{}-{}.png'.format(player.name, player.disc_id), quality=100)
+#        target.save('{}-{}.png'.format(player.name, player.disc_id), quality=100)
+            
+        image = io.BytesIO()
+        target.save(image, format = 'PNG')
+        image.seek(0)
+        return image
         
     else:
         tiles = str(player.hand)
         for arg in args:
             tiles += str(arg)
-        makeImage(tiles)
+        return makeImage(tiles)
         
-    
-    image_list = []
-    rotate_list = []
-    
-    
-
 def makeImage(text):
     if not text:
         return 0
@@ -196,8 +196,11 @@ def makeImage(text):
         
         left += img.size[0]
         
-    target.save('{}.png'.format(text.replace(' ', '_')), quality=100)
-
+#    target.save('{}.png'.format(text.replace(' ', '_')), quality=100)
+    image = io.BytesIO()
+    target.save(image, format = 'PNG')
+    image.seek(0)
+    return image
 
 def makeYamaImage(text):
     if text:
@@ -216,4 +219,8 @@ def makeYamaImage(text):
     for img in imagefile:
         target.paste(img, (left, 0))
         left += img.size[0]
-    target.save('{}.png'.format(text if text else 'Yama'), quality=100)
+    #target.save('{}.png'.format(text if text else 'Yama'), quality=100)
+    image = io.BytesIO()
+    target.save(image, format = 'PNG')
+    image.seek(0)
+    return image

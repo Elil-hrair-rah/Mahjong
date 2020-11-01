@@ -190,17 +190,20 @@ class Player:
             who = relative_direction[who % 4]
             
             if len(pon_tiles) > 2 and discard.true_value == 5 and discard.value != '0':
+                print('red 5 option')
                 red_five = [tile for tile in pon_tiles if tile.value == '0']
                 reg_five = [tile for tile in pon_tiles if tile.value == '5']
                 choice = await self.user_input('Pon with red 5?')
                 if choice == 'cancel':
                     return False
                 elif choice == 'y' or choice == 'yes':
+                    print('choice yes')
                     meld = Meld([discard,red_five[0], reg_five[0]], called = discard,\
                                 opened = True, who = who)
                     self.melds.add_meld(meld)
                     self.hand.remove_tiles([red_five[0], reg_five[0]])
                 elif choice == 'n' or choice == 'no':
+                    print('choice no')
                     meld = Meld([discard, reg_five[0], reg_five[1]], called = discard,\
                                 opened = True, who = who)
                     self.melds.add_meld(meld)
@@ -232,7 +235,7 @@ class Player:
         ckan_tiles = self.ckan_tiles()
         if ckan_tiles:
             if len(ckan_tiles) > 1:
-                query = 'Which kan?\n' + ' '.join(map(str, ckan_tiles))
+                query = 'Which kan?\n' + ' '.join(map(str, [tile[-1] for tile in ckan_tiles]))
                 choice = await self.user_input(query)
                 if choice == 'cancel':
                     return False
@@ -454,5 +457,5 @@ class Player:
         def check(msg):
             return msg.channel == dm and msg.author == self.disc_id
         response = await self.client.wait_for('message', check = check, timeout = 25.0)
-        return response
+        return response.content
     

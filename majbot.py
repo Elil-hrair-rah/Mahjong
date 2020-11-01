@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import io
 import json
 import re
 from functools import reduce
@@ -23,6 +24,7 @@ from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
 from player import Player
 from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
+from graphics import player_image, makeYamaImage
 
 import discord
 from discord.ext import commands
@@ -222,7 +224,7 @@ async def user_input(query, player):
 @discordclient.command()
 async def input_test(ctx, args):
     if ctx.author.id in whitelist:
-        player = Player('bob', ctx.author)
+        player = Player('bob', ctx.author, discordclient)
         response = await user_input(args, player)
         print(response.content)
     else:
@@ -231,12 +233,75 @@ async def input_test(ctx, args):
 @discordclient.command()
 async def player_input(ctx, args):
     if ctx.author.id in whitelist:
-        player = Player('bob', ctx.author)
+        player = Player('bob', ctx.author, discordclient)
         response = await player.user_input(args, discordclient)
         print(response.content)
     else:
         await ctx.send("Administrator command")
     
+@discordclient.command()
+async def graphics_test(ctx):
+    if ctx.author.id in whitelist:
+        player = Player('bob', ctx.author, discordclient)
+        otherplayer = Player('notbob', 1, discordclient)
+        game = Game([player, otherplayer, otherplayer, otherplayer])
+        hand_picture = player_image(player)
+        hand = discord.File(hand_picture, filename = "hand.png")
+        await ctx.send('hand', file = hand)
+    else:
+        await ctx.send("Administrator command")
+    
+@discordclient.command()
+async def chii_test(ctx):
+    if ctx.author.id in whitelist:
+        player = Player('bob', ctx.author, discordclient)
+        otherplayer = Player('notbob', 1, discordclient)
+        game = Game([player, otherplayer, otherplayer, otherplayer])
+        player.hand.add_tiles('1234506m')
+        await player.chii(Tile('4','m'), game)
+        await ctx.send(str(player))
+    else:
+        await ctx.send("Administrator command")
+        
+@discordclient.command()
+async def pon_test(ctx):
+    if ctx.author.id in whitelist:
+        player = Player('bob', ctx.author, discordclient)
+        otherplayer = Player('notbob', 1, discordclient)
+        game = Game([player, otherplayer, otherplayer, otherplayer])
+        player.hand.add_tiles('111550m')
+        await player.pon(Tile('1','m'), game)
+        await player.pon(Tile('5','m'), game)
+        await ctx.send(str(player))
+    else:
+        await ctx.send("Administrator command")
+
+@discordclient.command()
+async def kan_test(ctx):
+    if ctx.author.id in whitelist:
+        player = Player('bob', ctx.author, discordclient)
+        otherplayer = Player('notbob', 1, discordclient)
+        game = Game([player, otherplayer, otherplayer, otherplayer])
+        player.hand.add_tiles('111550m9999m')
+        player.okan(Tile('1','m'), game)
+        await player.pon(Tile('5','m'), game)
+        await player.ckan()
+        await player.ckan()
+        await ctx.send(str(player))
+    else:
+        await ctx.send("Administrator command")
+        
+@discordclient.command()
+async def riichi_test(ctx):
+    if ctx.author.id in whitelist:
+        player = Player('bob', ctx.author, discordclient)
+        player.hand.add_tiles('1112345678999m2s')
+        await player.riichi()
+        await ctx.send(str(player))
+        await ctx.send(player.points)
+        await ctx.send(player.in_riichi)
+    else:
+        await ctx.send("Administrator command")
 
 @discordclient.event
 async def on_ready():
@@ -295,7 +360,6 @@ async def dm(ctx, *arg):
             await ctx.author.send('testing dm functionality')
     else:
         await ctx.send("Administrator command")
-
 
 @discordclient.command()
 async def pending_dm(ctx, key):
