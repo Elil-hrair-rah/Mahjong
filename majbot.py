@@ -24,14 +24,16 @@ from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
 from player import Player
 from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
-from graphics import player_image, makeYamaImage
+from graphics import player_image, makeImage, makeYamaImage
 
 import discord
 from discord.ext import commands
 
 class Match:
     
-    def __init__(self, players, aka = 3):
+    def __init__(self, players, match_id, aka = 3):
+        self.match_id = match_id
+        self.players = players
         self.player_order = random.sample(players, 4)
         self.round_wind = EAST
         self.round_number = 1
@@ -49,11 +51,14 @@ class Match:
     
     def begin_game(self):
         
-        game = Game(self.player_order, self.aka)
+        game = Game(self.player_order, self.match_id, self.aka)
 
 class Game:
     
-    def __init__(self, players, aka = 3):
+    def __init__(self, players, match_id, aka = 3):
+        self.players = players
+        self.match_id = match_id
+        
         self.wall = Wall(aka)
         
         self.east = players[0]
@@ -204,8 +209,10 @@ whitelist = [422108792923095050,
              606746521538527234]
 
 pending_games = dict()
-active_users = []
+active_users = dict()
 pending_users = []
+active_games = []
+active_matches = []
 
 intents = discord.Intents(messages = True, guilds = True, members = True)
 discordclient = commands.Bot(command_prefix = 'm!', intents = intents)
@@ -245,18 +252,63 @@ async def graphics_test(ctx):
         player = Player('bob', ctx.author, discordclient)
         otherplayer = Player('notbob', 1, discordclient)
         game = Game([player, otherplayer, otherplayer, otherplayer])
-        hand_picture = player_image(player)
+        hand_picture = player_image(player, False, True)
         hand = discord.File(hand_picture, filename = "hand.png")
         await ctx.send('hand', file = hand)
+    else:
+        await ctx.send("Administrator command")
+        
+@discordclient.command()
+async def print_hand(ctx, arg):
+    if ctx.author.id in whitelist:
+        hand_picture = makeImage(arg)
+        hand = discord.File(hand_picture, filename = arg + ".png")
+        await ctx.send('hand', file = hand)
+    else:
+        await ctx.send("Administrator command")
+    
+@discordclient.command()
+async def create_player(ctx):
+    global active_users
+    if ctx.author.id in whitelist and ctx.author not in active_users:
+        global active_games
+        player = Player(ctx.author.id, ctx.author, discordclient, ctx.message.id)
+        otherplayer = Player(0, discordclient.user, discordclient, ctx.message.id)
+        game = Game([player, otherplayer, otherplayer, otherplayer], ctx.message.id)
+        active_games.append(game)
+        active_users[ctx.author] = ctx.message.id
+        await ctx.send('Player object created')
+    else:
+        await ctx.send("Administrator command")
+    
+@discordclient.command()
+async def player_hand(ctx):
+    if ctx.author.id in whitelist:
+        if ctx.author in active_users:
+            game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
+            player = [player for player in game.players if player.disc == ctx.author]
+            await player[0].show_hand()
+        await ctx.send('Hand Shown')
+    else:
+        await ctx.send("Administrator command")
+    
+@discordclient.command()
+async def player_dd(ctx):
+    if ctx.author.id in whitelist:
+        if ctx.author in active_users:
+            game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
+            player = [player for player in game.players if player.disc == ctx.author]
+            await player[0].draw_discard(game.wall)
+        await ctx.send('Draw and Discard')
     else:
         await ctx.send("Administrator command")
     
 @discordclient.command()
 async def chii_test(ctx):
     if ctx.author.id in whitelist:
-        player = Player('bob', ctx.author, discordclient)
-        otherplayer = Player('notbob', 1, discordclient)
-        game = Game([player, otherplayer, otherplayer, otherplayer])
+        player = Player('bob', ctx.author, discordclient, ctx.message.id)
+        otherplayer = Player('notbob', 1, discordclient, ctx.message.id)
+        game = Game([player, otherplayer, otherplayer, otherplayer], ctx.message.id)
         player.hand.add_tiles('1234506m')
         await player.chii(Tile('4','m'), game)
         await ctx.send(str(player))
@@ -329,9 +381,9 @@ async def on_reaction_add(reaction, user):
             pending_games[reaction.message.id].append(user)
         if len(pending_games[reaction.message.id]) == 4:
             users = pending_games[reaction.message.id][:]
-            active_users.extend(pending_games[reaction.message.id])
             del pending_games[reaction.message.id]
             for user in users:
+                active_users[user] = reaction.message.id
                 for ids in pending_games.values():
                     try:
                         ids.remove(user)

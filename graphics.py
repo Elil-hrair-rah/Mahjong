@@ -21,7 +21,7 @@ from mahjong.shanten import Shanten
 
 from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
-from player import Player
+#from player import Player
 from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
 
 ''' testing code
@@ -47,13 +47,20 @@ await bob.ckan()
 
 '''
 
-def player_image(player, *args):
-    if not isinstance(player, Player):
-        return False
+def player_image(player, hidden, tsumogiri, *args):
+#    if not isinstance(player, Player):
+#        return False
     
     if player.melds.melds:
         image_list = []
-        parts = [str(player.hand)]
+        if hidden:
+            if tsumogiri:
+                parts = ['x' * len(player.hand) + 'z']
+            else:
+                location = random.randint(1,len(player.hand))
+                parts = [' '.join(['x' * location + 'z', 'x' * (len(player.hand) - location) + 'z'])]
+        else:
+            parts = [str(player.hand)]
         rotated = []
         rotated.append([0 for tile in player.hand.tiles])
         for arg in args:
@@ -155,7 +162,7 @@ def player_image(player, *args):
             left += image.size[0]
             
 #        target.save('{}-{}.png'.format(player.name, player.disc_id), quality=100)
-            
+        
         image = io.BytesIO()
         target.save(image, format = 'PNG')
         image.seek(0)
@@ -163,24 +170,35 @@ def player_image(player, *args):
         
     else:
         tiles = str(player.hand)
-        for arg in args:
-            tiles += str(arg)
-        return makeImage(tiles)
+        if args:
+            args = [str(arg) for arg in args]
+            return makeImage(tiles, hidden, tsumogiri, args)
+        return makeImage(tiles, hidden, tsumogiri)
         
-def makeImage(text):
+def makeImage(text, hidden = False, tsumogiri = False, *args):
     if not text:
         return 0
     image_list = []
-    parts = text.split(' ')
-    for i in range(len(parts)):
-        part = parts[i]
+    if hidden:
+        length = len(re.findall(r'([0-9x])', text))
+        if tsumogiri:
+            parts = ['x' * (length) + 'z']
+        else:
+            location = random.randint(1,length)
+            parts = ['x' * location + 'z']
+            parts.append('x' * (length - location) + 'z')
+    else:
+        parts = text.split(' ')
+    if args:
+        parts.extend(args[0])
+    for part in parts:
         results = re.findall(r'([0-9x]+[mpsz])', part)
         if part == parts[0]:
             results = list(
                 reduce(list.__add__,
                        [['{}{}'.format(x, result[-1]) for x in result[:-1]]
                         for result in results]))
-            results = sorted(sorted(results), key=lambda x: x[-1])
+#            results = sorted(sorted(results), key=lambda x: x[-1])
         for result in results:
             image_list += [
                 './ui/{}{}.png'.format(x, result[-1]) for x in result[:-1]
@@ -197,6 +215,7 @@ def makeImage(text):
         left += img.size[0]
         
 #    target.save('{}.png'.format(text.replace(' ', '_')), quality=100)
+
     image = io.BytesIO()
     target.save(image, format = 'PNG')
     image.seek(0)
@@ -220,7 +239,8 @@ def makeYamaImage(text):
         target.paste(img, (left, 0))
         left += img.size[0]
     #target.save('{}.png'.format(text if text else 'Yama'), quality=100)
+
     image = io.BytesIO()
-    target.save(image, format = 'PNG')
+    image.save(image, format = 'PNG')
     image.seek(0)
     return image

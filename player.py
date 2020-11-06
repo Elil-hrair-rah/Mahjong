@@ -20,7 +20,9 @@ from mahjong.shanten import Shanten
 
 from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
-#from graphics import makeImage, makeYamaImage
+import discord
+
+from graphics import player_image, makeImage, makeYamaImage
 from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
 from functions import shanten_calculator, winning_tiles 
 
@@ -31,10 +33,11 @@ from functions import shanten_calculator, winning_tiles
 
 class Player:
     
-    def __init__(self, name, disc_id, client, seat = None, luck = 0, points = 25000):
-        self.name = name
+    def __init__(self, disc_id, disc, client, match_id = 1, seat = None, luck = 0, points = 25000):
         self.disc_id = disc_id
+        self.disc = disc
         self.client = client
+        self.match_id = match_id
         self.seat = seat
         self.luck = luck
         self.points = points
@@ -63,18 +66,45 @@ class Player:
         #if tile is not stolen:
         self.discards.add_tiles(discard)
         
+    async def show_hand(self):
+        dm = self.disc.dm_channel
+        hand_picture = player_image(self, False, False)
+        hand = discord.File(hand_picture, filename = "hand.png")
+        if not dm:
+            dm = await self.disc.create_dm()
+        await dm.send(file = hand)
+    
     #TODO: account for melds
     async def draw_discard(self, wall):
         draw = wall.draw_tile(self)
+        
+        dm = self.disc.dm_channel
+        hand_picture = player_image(self, False, False, draw)
+        hand = discord.File(hand_picture, filename = "hand.png")
+        if not dm:
+            dm = await self.disc.create_dm()
+        await dm.send(file = hand)
+        
         #image = makeImage(' '.join([str(self.hand), str(draw)]))
         query = "What tile do you want to discard?\n" + str(self.hand) + ' ' + str(draw)
         discard = await self.user_input(query)
         discard = Tile(discard[0],discard[1])
-        #if discard == draw:
-        #    image = makeImage(' '.join(['xxxxxxxxxxxxxz', str(discard)]))
-        #else:
-        #    location = random.randint(1,13)
-        #    image = makeImage(' '.join(['x' * location + 'z', 'x' * (13 - location) + 'z', str(discard)]))
+        if discard == draw:
+            hand_picture = player_image(self, True, True, str(discard))
+        else:
+            hand_picture = player_image(self, True, False, str(discard))
+        
+        hand = discord.File(hand_picture, filename = "hand.png")
+        await dm.send('opp vision', file = hand)
+        
+        self.hand.add_tiles(draw)
+        self.hand.remove_tiles(discard)
+        self.total_discards.add_tiles(discard)
+        
+        hand_picture = player_image(self, False, False)
+        hand = discord.File(hand_picture, filename = "hand.png")
+        
+        await dm.send('final hand', file = hand)
     
     def chii_tiles(self, discard):
         if discard.suit == 'z':
@@ -450,12 +480,12 @@ class Player:
             return False
             
     async def user_input(self, query):
-        dm = self.disc_id.dm_channel
+        dm = self.disc.dm_channel
         if not dm:
-            dm = await self.disc_id.create_dm()
+            dm = await self.disc.create_dm()
         await dm.send(query)
         def check(msg):
-            return msg.channel == dm and msg.author == self.disc_id
+            return msg.channel == dm and msg.author == self.disc
         response = await self.client.wait_for('message', check = check, timeout = 25.0)
         return response.content
     
