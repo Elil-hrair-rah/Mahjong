@@ -214,7 +214,7 @@ pending_users = []
 active_games = []
 active_matches = []
 
-intents = discord.Intents(messages = True, guilds = True, members = True)
+intents = discord.Intents(messages = True, guilds = True, members = True, reactions = True)
 discordclient = commands.Bot(command_prefix = 'm!', intents = intents)
 
 
@@ -269,7 +269,7 @@ async def print_hand(ctx, arg):
     
 @discordclient.command()
 async def create_player(ctx):
-    global active_users
+    global active_users;
     if ctx.author.id in whitelist and ctx.author not in active_users:
         global active_games
         player = Player(ctx.author.id, ctx.author, discordclient, ctx.message.id)
@@ -373,32 +373,42 @@ async def on_message(message):
     await discordclient.process_commands(message)
 
 @discordclient.event
-async def on_reaction_add(reaction, user):
+async def on_raw_reaction_add(reaction):
     global pending_games
     global active_users
-    if reaction.message.id in pending_games and reaction.emoji == '✅':
-        if user not in active_users and not user.id == discordclient.user.id:
-            pending_games[reaction.message.id].append(user)
-        if len(pending_games[reaction.message.id]) == 4:
-            users = pending_games[reaction.message.id][:]
-            del pending_games[reaction.message.id]
+    user = reaction.member
+    message_id = reaction.message_id
+    channel = discordclient.get_channel(reaction.channel_id)
+    if message_id in pending_games and str(reaction.emoji) == '✅':
+        if user not in active_users and user.id != discordclient.user.id:
+            pending_games[message_id].append(user)
+        if len(pending_games[message_id]) == 4:
+            users = pending_games[message_id][:]
+            del pending_games[message_id]
+            players = []
             for user in users:
-                active_users[user] = reaction.message.id
+                active_users[user] = message_id
+                players.append(Player(user.id, user, discordclient))
                 for ids in pending_games.values():
                     try:
                         ids.remove(user)
                     except ValueError:
                         pass
-            await reaction.message.channel.send('game started')
+            game = Game(players, message_id)
+            active_games.append(game)
+            
+            await channel.send('game started')
             #TODO: start game
         
 @discordclient.event
-async def on_reaction_remove(reaction, user):
+async def on_raw_reaction_remove(reaction):
     global pending_games
-    if reaction.message.id in pending_games and reaction.emoji == '✅':
-        if user.id in pending_games[reaction.message.id]:
-            pending_games[reaction.message.id].remove(user)
-
+    message_id = reaction.message_id
+    user = [user for user in pending_games[message_id] if user.id == reaction.user_id]
+    if message_id in pending_games and str(reaction.emoji) == '✅':
+        if user:
+            pending_games[message_id].remove(user[0])
+            
 @discordclient.command()
 async def dm(ctx, *arg):
     if ctx.author.id in whitelist:
@@ -435,6 +445,13 @@ async def pending_game(ctx):
 async def active_user(ctx):
     if ctx.author.id in whitelist:
         await ctx.send(active_users)
+    else:
+        await ctx.send("Administrator command")
+
+@discordclient.command()
+async def active_game(ctx):
+    if ctx.author.id in whitelist:
+        await ctx.send(active_games)
     else:
         await ctx.send("Administrator command")
 
