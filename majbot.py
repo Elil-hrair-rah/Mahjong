@@ -94,7 +94,10 @@ class Game:
         rotation = [self.east, self.south, self.west, self.north, self.east]
         self.active_player = rotation[rotation.index(self.active_player) + 1]
         
-            
+    async def start(self):
+        while self.wall.remaining > 0:
+            await self.active_player.draw_discard(self.wall)
+            self.turn_progress()
         
 
 
@@ -288,7 +291,9 @@ async def player_hand(ctx):
             game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
             player = [player for player in game.players if player.disc == ctx.author]
             await player[0].show_hand()
-        await ctx.send('Hand Shown')
+            await ctx.send('Hand Shown')
+        else:
+            await ctx.send('You are not in a game')
     else:
         await ctx.send("Administrator command")
     
@@ -299,7 +304,9 @@ async def player_dd(ctx):
             game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
             player = [player for player in game.players if player.disc == ctx.author]
             await player[0].draw_discard(game.wall)
-        await ctx.send('Draw and Discard')
+            await ctx.send('Draw and Discard')
+        else:
+            await ctx.send('You are not in a game')
     else:
         await ctx.send("Administrator command")
     
@@ -310,6 +317,8 @@ async def chii_test(ctx):
         otherplayer = Player('notbob', 1, discordclient, ctx.message.id)
         game = Game([player, otherplayer, otherplayer, otherplayer], ctx.message.id)
         player.hand.add_tiles('1234506m')
+        active_games.append(game)
+        active_users[ctx.author] = ctx.message.id
         await player.chii(Tile('4','m'), game)
         await ctx.send(str(player))
     else:
@@ -322,6 +331,8 @@ async def pon_test(ctx):
         otherplayer = Player('notbob', 1, discordclient)
         game = Game([player, otherplayer, otherplayer, otherplayer])
         player.hand.add_tiles('111550m')
+        active_games.append(game)
+        active_users[ctx.author] = ctx.message.id
         await player.pon(Tile('1','m'), game)
         await player.pon(Tile('5','m'), game)
         await ctx.send(str(player))
@@ -336,6 +347,8 @@ async def kan_test(ctx):
         game = Game([player, otherplayer, otherplayer, otherplayer])
         player.hand.add_tiles('111550m9999m')
         player.okan(Tile('1','m'), game)
+        active_games.append(game)
+        active_users[ctx.author] = ctx.message.id
         await player.pon(Tile('5','m'), game)
         await player.ckan()
         await player.ckan()
@@ -396,6 +409,7 @@ async def on_raw_reaction_add(reaction):
                         pass
             game = Game(players, message_id)
             active_games.append(game)
+            await game.start()
             
             await channel.send('game started')
             #TODO: start game
