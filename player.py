@@ -26,6 +26,7 @@ from graphics import player_image, makeImage, makeYamaImage
 from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
 from functions import shanten_calculator, winning_tiles 
 
+import asyncio
 
 
 
@@ -60,11 +61,31 @@ class Player:
         #image = makeImage(' '.join([str(self.hand), str(draw)]))
         self.hand.add_tiles(draw)
         
-    def discard_tile(self, discard):
+    #TODO: test this function
+    async def discard_tile(self):
+        dm = self.disc.dm_channel
+        hand_picture = player_image(self, False, False)
+        hand = discord.File(hand_picture, filename = "hand.png")
+        if not dm:
+            dm = await self.disc.create_dm()
+        await dm.send(file = hand)
+        query = "What tile do you want to discard?\n" + str(self.hand)
+        try:
+            discard = await self.user_input(query)
+            discard = Tile(discard[0],discard[1])
+        except asyncio.exceptions.TimeoutError:
+            discard = random.choice(self.hand.tiles)
+        
         self.hand.remove_tiles(discard)
         self.total_discards.add_tiles(discard)
         #if tile is not stolen:
         self.discards.add_tiles(discard)
+        
+        hand_picture = player_image(self, True, True, str(discard))
+        hidden_hand = discord.File(hand_picture, filename = "hand.png")
+        await dm.send('opp vision', file = hidden_hand)
+        
+        return discard, hand_picture
         
     async def show_hand(self):
         dm = self.disc.dm_channel
@@ -74,7 +95,8 @@ class Player:
             dm = await self.disc.create_dm()
         await dm.send(file = hand)
     
-    #TODO: account for melds
+    #TODO: account for melds (done?)
+    #TODO: invalid tiles
     async def draw_discard(self, wall):
         draw = wall.draw_tile(self)
         
@@ -87,24 +109,29 @@ class Player:
         
         #image = makeImage(' '.join([str(self.hand), str(draw)]))
         query = "What tile do you want to discard?\n" + str(self.hand) + ' ' + str(draw)
-        discard = await self.user_input(query)
-        discard = Tile(discard[0],discard[1])
-        if discard == draw:
-            hand_picture = player_image(self, True, True, str(discard))
-        else:
-            hand_picture = player_image(self, True, False, str(discard))
+        try:
+            discard = await self.user_input(query)
+            discard = Tile(discard[0],discard[1])
+        except asyncio.exceptions.TimeoutError:
+            discard = draw
         
-        hand = discord.File(hand_picture, filename = "hand.png")
-        await dm.send('opp vision', file = hand)
+        if discard == draw:
+            hidden_picture = player_image(self, True, True, str(discard))
+        else:
+            hidden_picture = player_image(self, True, False, str(discard))
+        
+        hidden_hand = discord.File(hidden_picture, filename = "hand.png")
+        await dm.send('opp vision', file = hidden_hand)
         
         self.hand.add_tiles(draw)
         self.hand.remove_tiles(discard)
         self.total_discards.add_tiles(discard)
         
         hand_picture = player_image(self, False, False)
-        hand = discord.File(hand_picture, filename = "hand.png")
+        final_hand = discord.File(hand_picture, filename = "hand.png")
         
-        await dm.send('final hand', file = hand)
+        await dm.send('final hand', file = final_hand)
+        return discard, hidden_picture
     
     def chii_tiles(self, discard):
         if discard.suit == 'z':
@@ -154,17 +181,17 @@ class Player:
     
     def pon_tiles(self, discard):
         search = [tile for tile in self.hand.tiles if tile == discard]
-        if len(search) > 1:
-            return search
-        else:
-            return False
+        if search:
+            if len(search) > 1:
+                return search
+        return False
         
     def okan_tiles(self, discard):
         search = self.pon_tiles(discard)
-        if len(search) > 2:
-            return search
-        else:
-            return False
+        if search:
+            if len(search) > 2:
+                return search
+        return False
         
     def ckan_tiles(self):
         search = []
@@ -188,8 +215,12 @@ class Player:
         chii_tiles = self.chii_tiles(discard)
         if chii_tiles:
             if len(chii_tiles) > 1:
-                query = "Please choose your desired meld:\n" + ' '.join(map(str, chii_tiles))
-                choice = await self.user_input(query)
+                try:
+                    query = "Please choose your desired meld or type cancel:\n" + ' '.join(map(str, chii_tiles))
+                    choice = await self.user_input(query)
+                except asyncio.exceptions.TimeoutError:
+                    choice = 'cancel'
+
                 if choice == 'cancel':
                     return False
                 else:
@@ -200,6 +231,7 @@ class Player:
                         self.melds.add_meld(meld)
                         match.remove_tiles(discard)
                         self.hand.remove_tiles(match)
+                        return True
                     else:
                         return False
             else:
@@ -208,6 +240,7 @@ class Player:
                 self.melds.add_meld(meld)
                 match.remove_tiles(discard)
                 self.hand.remove_tiles(match)
+                return True
         else:
             return False
         
@@ -220,10 +253,12 @@ class Player:
             who = relative_direction[who % 4]
             
             if len(pon_tiles) > 2 and discard.true_value == 5 and discard.value != '0':
-                print('red 5 option')
                 red_five = [tile for tile in pon_tiles if tile.value == '0']
                 reg_five = [tile for tile in pon_tiles if tile.value == '5']
-                choice = await self.user_input('Pon with red 5?')
+                try:
+                    choice = await self.user_input('Pon with red 5? Type cancel to cancel pon.')
+                except asyncio.exceptions.TimeoutError:
+                    choice = 'cancel'
                 if choice == 'cancel':
                     return False
                 elif choice == 'y' or choice == 'yes':
@@ -232,17 +267,20 @@ class Player:
                                 opened = True, who = who)
                     self.melds.add_meld(meld)
                     self.hand.remove_tiles([red_five[0], reg_five[0]])
+                    return True
                 elif choice == 'n' or choice == 'no':
                     print('choice no')
                     meld = Meld([discard, reg_five[0], reg_five[1]], called = discard,\
                                 opened = True, who = who)
                     self.melds.add_meld(meld)
                     self.hand.remove_tiles(reg_five)
+                    return True
             else:
                 meld = Meld([discard, pon_tiles[0], pon_tiles[1]], called = discard,\
                             opened = True, who = who)
                 self.melds.add_meld(meld)
                 self.hand.remove_tiles(pon_tiles[:2])
+                return True
         else:
             return False
         
@@ -258,6 +296,7 @@ class Player:
             okan_tiles.append(discard)
             meld = Meld(okan_tiles, called = discard, opened = True, who = who)
             self.melds.add_meld(meld)
+            return True
         else:
             return False
         
@@ -265,8 +304,12 @@ class Player:
         ckan_tiles = self.ckan_tiles()
         if ckan_tiles:
             if len(ckan_tiles) > 1:
-                query = 'Which kan?\n' + ' '.join(map(str, [tile[-1] for tile in ckan_tiles]))
-                choice = await self.user_input(query)
+                try:
+                    query = 'Which kan?\n' + ' '.join(map(str, [tile[-1] for tile in ckan_tiles]))
+                    choice = await self.user_input(query)
+                except asyncio.exceptions.TimeoutError:
+                    choice = 'cancel'
+                
                 if choice == 'cancel':
                     return False
                 chosen_kan = [kan for kan in ckan_tiles if str(kan[1]) == choice][0]
@@ -309,9 +352,13 @@ class Player:
                 temp.remove_tiles(tile)
                 if winning_tiles(temp):
                     riichi_tiles.append(tile)
-            query = "Which tile would you like to riichi on?\n" + ' '.join(map(str, riichi_tiles))
-            print(query)
-            choice = await self.user_input(query)
+            
+            try:
+                query = "Which tile would you like to riichi on? Type cancel to cancel riichi.\n" + ' '.join(map(str, riichi_tiles))
+                choice = await self.user_input(query)
+            except asyncio.exceptions.TimeoutError:
+                choice = 'cancel'
+            
             if choice == 'cancel':
                 return False
             else:

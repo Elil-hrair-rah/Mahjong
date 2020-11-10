@@ -29,6 +29,8 @@ from graphics import player_image, makeImage, makeYamaImage
 import discord
 from discord.ext import commands
 
+import asyncio
+
 class Match:
     
     def __init__(self, players, match_id, aka = 3):
@@ -94,13 +96,80 @@ class Game:
         rotation = [self.east, self.south, self.west, self.north, self.east]
         self.active_player = rotation[rotation.index(self.active_player) + 1]
         
+    def next_player(self):
+        rotation = [self.east, self.south, self.west, self.north, self.east]
+        return rotation[rotation.index(self.active_player) + 1]
+        
+        
     async def start(self):
         while self.wall.remaining > 0:
-            await self.active_player.draw_discard(self.wall)
+            discard, hidden_hand = await self.active_player.draw_discard(self.wall)
+            
+            other_players = [player for player in self.players if player is not self.active_player]
+            
+            for player in other_players:
+                dm = player.disc.dm_channel
+                if not dm:
+                    dm = await player.disc.create_dm()
+                hidden_hand.seek(0)
+                hidden = discord.File(hidden_hand, filename = "hand.png")
+                
+                await dm.send(self.active_player.disc, file = hidden)
+                
+            await self.process_discard(discard)     
             self.turn_progress()
-        
 
-
+    #TODO: test this
+    async def process_discard(self, discard):
+        current_player = self.active_player
+        called = False
+        other_players = [player for player in self.players if player is not self.active_player]
+        for player in other_players:
+            kan = player.okan_tiles(discard)
+            if kan:
+                try:
+                    choice = await player.user_input('Would you like to kan the ' + str(discard) + '?')
+                except asyncio.exceptions.TimeoutError:
+                    choice = 'n'
+                if choice == 'yes' or choice == 'y':
+                    called = await player.okan(discard, self)
+                    if called:
+                        self.active_player = player
+                        discard, hidden_hand = await self.active_player.draw_discard(self.wall)
+                    
+            pon = player.pon_tiles(discard)
+            if pon:
+                try:
+                    choice = await player.user_input('Would you like to pon the ' + str(discard) + '?')
+                except asyncio.exceptions.TimeoutError:
+                    choice = 'n'
+                if choice == 'yes' or choice == 'y':
+                    called = await player.pon(discard, self)
+                    if called:
+                        self.active_player = player
+                        discard, hidden_hand = await self.active_player.discard_tile()
+        next_player = self.next_player()
+        chii = next_player.chii_tiles(discard)
+        if chii:
+            try:
+                choice = await next_player.user_input('Would you like to chii the ' + str(discard) + '?')
+            except asyncio.exceptions.TimeoutError:
+                choice = 'n'
+            if choice == 'yes' or choice == 'y':
+                called = await next_player.chii(discard, self)
+                if called:
+                    self.active_player = next_player
+                    discard, hidden_hand = await self.active_player.discard_tile()
+        if called:
+            other_players = [player for player in self.players if player is not self.active_player]
+            for player in other_players:
+                dm = player.disc.dm_channel
+                if not dm:
+                    dm = await player.disc.create_dm()
+                hidden_hand.seek(0)
+                hidden = discord.File(hidden_hand, filename = "hand.png")
+                await dm.send(self.active_player.disc, file = hidden)
+            await self.process_discard(discard)
 
 
 
