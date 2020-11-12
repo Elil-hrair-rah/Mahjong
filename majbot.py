@@ -25,6 +25,9 @@ from mahjong.constants import EAST, SOUTH, WEST, NORTH
 from player import Player
 from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
 from graphics import player_image, makeImage, makeYamaImage
+from functions import winning_tiles, ukeire, hand_calculator, shanten_calculator
+from errorhandling import GameOver
+
 
 import discord
 from discord.ext import commands
@@ -72,6 +75,21 @@ class Game:
         self.north = players[3]
         self.north.seat = NORTH
         
+        for player in players:
+            player.hand = Hand()
+            player.melds = Melds()
+            player.discards = Discards()
+            player.total_discards = Discards()
+            player.rinshan = False
+            player.in_riichi = False
+            player.double_riichi = False
+            player.ippatsu = False
+            player.tenhou = True
+            player.chiihou = True
+            player.renhou = True
+            player.temp_furiten = False
+            player.riichi_furiten = False
+        
         self.wall.deal_hand(self.east)
         self.wall.deal_hand(self.south)
         self.wall.deal_hand(self.west)
@@ -83,6 +101,12 @@ class Game:
         self.ura_dora = Dora()
         self.wall.dora(self.dora)
         self.wall.dora(self.ura_dora)
+        
+        self.tenhou = True
+        
+        self.honba = 0
+        self.riichi = 0
+        
         
         #que
         #self.dora_tiles = Tiles()
@@ -103,32 +127,103 @@ class Game:
         
     async def start(self):
         while self.wall.remaining > 0:
-            discard, hidden_hand = await self.active_player.draw_discard(self.wall)
-            
-            other_players = [player for player in self.players if player is not self.active_player]
-            
-            for player in other_players:
-                dm = player.disc.dm_channel
-                if not dm:
-                    dm = await player.disc.create_dm()
-                hidden_hand.seek(0)
-                hidden = discord.File(hidden_hand, filename = "hand.png")
+            try:
+                discard, hidden_hand = await self.active_player.draw_discard(self)
                 
-                await dm.send(self.active_player.disc, file = hidden)
+                other_players = [player for player in self.players if player is not self.active_player]
                 
-            await self.process_discard(discard)     
-            self.turn_progress()
+                for player in other_players:
+                    dm = player.disc.dm_channel
+                    if not dm:
+                        dm = await player.disc.create_dm()
+                    hidden_hand.seek(0)
+                    hidden = discord.File(hidden_hand, filename = "hand.png")
+                    
+                    await dm.send(self.active_player.disc, file = hidden)
+                    if self.active_player.in_riichi:
+                        await dm.send(str(self.active_player.disc) + ' is in riichi!')
+                    
+                await self.process_discard(discard)     
+                self.turn_progress()
+            except GameOver as result:
+                win_string = ''
+                for winner, score in result.items():
+                    
+                    #ron
+                    if score.cost['additional'] == 0:
+                        self.active_player.points -= score.cost['main']
+                        winner.points += score.cost['main']
+                        win_string.append(str(winner.disc) + ' has won by ron off ' + str(self.active_player.disc) +\
+                                          ' and won ' + score.cost['main'] + ' points.\n')
+                    #tsumo
+                    else:
+                        other_players = [player for player in self.players if player is not self.active_player]
+                        score_change = 0
+                        for player in other_players:
+                            if player.seat == EAST:
+                                player.points -= score.cost['main']
+                                winner.points += score.cost['main']
+                                score_change += score.cost['main']
+                            else:
+                                player.points -= score.cost['additional']
+                                winner.points += score.cost['additional']
+                                score_change += score.cost['additional']
+                        win_string.append(str(winner.disc) + ' has won by tsumo and won ' + score.cost['main'] + ' points.\n')
+
+                details = str(score) + '\nYaku:\n' + str(score.yaku) + '\nFu:\n' + str(score.fu_details)
+                    
+                scores = 'Scores:\n'
+                for player in self.players:
+                    scores.append(str(player.disc) + ': ' + str(player.points))
+                    
+                global active_users
+                global active_games            
+                
+                #might need to compact this part due to discord's ratelimits
+                for player in self.players:
+                    dm = player.disc.dm_channel
+                    if not dm:
+                        dm = await player.disc.create_dm()
+                    await dm.send(win_string)
+                    await dm.send(details)
+                    await dm.send(scores)
+                    for winner in result.keys():
+                        winner.show_hand(dm)
+                    active_users.pop(player)
+                active_games.remove(self)
+                        
+
+                
+                    
 
     #TODO: test this
     async def process_discard(self, discard):
-        current_player = self.active_player
         called = False
         other_players = [player for player in self.players if player is not self.active_player]
+        
+        rons = dict()
+        for player in other_players:
+            ron = player.ron(discard, self)
+            if ron:
+                try:
+                    choice = await player.user_input('Would you like to ron on the ' + str(discard) + '?')
+                except asyncio.exceptions.TimeoutError:
+                    choice = 'y'
+                if choice == 'yes' or choice == 'y':
+                    rons[player] = ron
+                else:
+                    player.temp_furiten = True
+                    if player.in_riichi:
+                        player.riichi_furiten = True
+        
+        if rons:
+            raise GameOver(rons, discard)
+        
         for player in other_players:
             kan = player.okan_tiles(discard)
             if kan:
                 try:
-                    choice = await player.user_input('Would you like to kan the ' + str(discard) + '?')
+                    choice = await player.user_input('Would you like to kan on the ' + str(discard) + '?')
                 except asyncio.exceptions.TimeoutError:
                     choice = 'n'
                 if choice == 'yes' or choice == 'y':
@@ -140,7 +235,7 @@ class Game:
             pon = player.pon_tiles(discard)
             if pon:
                 try:
-                    choice = await player.user_input('Would you like to pon the ' + str(discard) + '?')
+                    choice = await player.user_input('Would you like to pon on the ' + str(discard) + '?')
                 except asyncio.exceptions.TimeoutError:
                     choice = 'n'
                 if choice == 'yes' or choice == 'y':
@@ -152,7 +247,7 @@ class Game:
         chii = next_player.chii_tiles(discard)
         if chii:
             try:
-                choice = await next_player.user_input('Would you like to chii the ' + str(discard) + '?')
+                choice = await next_player.user_input('Would you like to chii on the ' + str(discard) + '?')
             except asyncio.exceptions.TimeoutError:
                 choice = 'n'
             if choice == 'yes' or choice == 'y':
@@ -161,6 +256,11 @@ class Game:
                     self.active_player = next_player
                     discard, hidden_hand = await self.active_player.discard_tile()
         if called:
+            
+            for player in self.players:
+                player.ippatsu = False
+                self.tenhou = False
+            
             other_players = [player for player in self.players if player is not self.active_player]
             for player in other_players:
                 dm = player.disc.dm_channel
@@ -355,16 +455,13 @@ async def create_player(ctx):
     
 @discordclient.command()
 async def player_hand(ctx):
-    if ctx.author.id in whitelist:
-        if ctx.author in active_users:
-            game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
-            player = [player for player in game.players if player.disc == ctx.author]
-            await player[0].show_hand()
-            await ctx.send('Hand Shown')
-        else:
-            await ctx.send('You are not in a game')
+    if ctx.author in active_users:
+        game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
+        player = [player for player in game.players if player.disc == ctx.author]
+        await player[0].show_hand()
+        await ctx.send('Hand Shown')
     else:
-        await ctx.send("Administrator command")
+        await ctx.send('You are not in a game')
     
 @discordclient.command()
 async def player_dd(ctx):
@@ -398,7 +495,7 @@ async def pon_test(ctx):
     if ctx.author.id in whitelist:
         player = Player('bob', ctx.author, discordclient)
         otherplayer = Player('notbob', 1, discordclient)
-        game = Game([player, otherplayer, otherplayer, otherplayer])
+        game = Game([player, otherplayer, otherplayer, otherplayer], 1)
         player.hand.add_tiles('111550m')
         active_games.append(game)
         active_users[ctx.author] = ctx.message.id
@@ -413,7 +510,7 @@ async def kan_test(ctx):
     if ctx.author.id in whitelist:
         player = Player('bob', ctx.author, discordclient)
         otherplayer = Player('notbob', 1, discordclient)
-        game = Game([player, otherplayer, otherplayer, otherplayer])
+        game = Game([player, otherplayer, otherplayer, otherplayer], 1)
         player.hand.add_tiles('111550m9999m')
         player.okan(Tile('1','m'), game)
         active_games.append(game)
@@ -428,10 +525,13 @@ async def kan_test(ctx):
 @discordclient.command()
 async def riichi_test(ctx):
     if ctx.author.id in whitelist:
-        player = Player('bob', ctx.author, discordclient)
-        player.hand.add_tiles('1112345678999m2s')
-        await player.riichi()
-        await ctx.send(str(player))
+        player = Player(ctx.author.id, ctx.author, discordclient)
+        otherplayer = Player('notbob', 1, discordclient)
+        game = Game([otherplayer, otherplayer, otherplayer, otherplayer], 1)
+        player.hand.add_tiles('1112345678999m')
+        discard = await player.riichi(Tile('2','p'), game)
+        await ctx.send(str(player) + str(Tile('2','p')))
+        await ctx.send(str(discard))
         await ctx.send(player.points)
         await ctx.send(player.in_riichi)
     else:
@@ -570,7 +670,6 @@ async def invite(ctx):
     ''' The invite link for this bot.
     If the link doesn't work, it's probably because the bot is in 100 servers and I haven't verified it.
     '''
-    print('https://discord.com/oauth2/authorize?client_id=769708017993121822&permissions=387136&scope=bot')
     await ctx.send('https://discord.com/oauth2/authorize?client_id=769708017993121822&permissions=387136&scope=bot')
 
 @discordclient.command()
@@ -578,6 +677,32 @@ async def os(ctx):
     ''' The invite link for the official server.
     It probably doesn't exist yet.
     '''
-    pass
+    await ctx.send("it doesn't exist yet lol")
     
+@discordclient.command()
+async def waits(ctx, arg):
+    ''' The invite link for this bot.
+    If the link doesn't work, it's probably because the bot is in 100 servers and I haven't verified it.
+    '''
+    tiles = ukeire(arg)
+    tiles = [str(tile) for tile in tiles]
+    tiles = ' '.join(tiles)
+    await ctx.send(tiles)
+    
+@discordclient.command()
+async def shanten(ctx, arg):
+    ''' A 14-tile shanten calculator.
+    -2 indicates an invalid hand, -1 indicates a winning hand, 0 indicates tenpai, etc
+    '''
+    await ctx.send(shanten_calculator(arg))
+    
+@discordclient.command()
+async def agaripai(ctx, arg):
+    ''' The tiles you can win on.
+    '''
+    agaripai = winning_tiles(arg)
+    agaripai = [str(tile) for tile in agaripai]
+    agaripai = ' '.join(agaripai)
+    await ctx.send(agaripai)
+
 discordclient.run("NzY5NzA4MDE3OTkzMTIxODIy.X5S8cw.tSClXF6i-4i0Kl9bAyA3euDQciw")

@@ -14,7 +14,7 @@ from PIL import Image
 
 from mahjong.hand_calculating.hand import HandCalculator
 from mahjong.tile import TilesConverter
-from mahjong.hand_calculating.hand_config import HandConfig
+from mahjong.hand_calculating.hand_config import HandConfig, OptionalRules
 from mahjong.meld import Meld as mjMeld
 from mahjong.shanten import Shanten
 
@@ -25,12 +25,14 @@ import discord
 from graphics import player_image, makeImage, makeYamaImage
 from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
 from functions import shanten_calculator, winning_tiles 
+from errorhandling import GameOver
 
 import asyncio
 
 
 
 
+        
 
 class Player:
     
@@ -46,12 +48,15 @@ class Player:
         self.melds = Melds()
         self.discards = Discards()
         self.total_discards = Discards()
+        self.rinshan = False
         self.in_riichi = False
         self.double_riichi = False
         self.ippatsu = False
         self.tenhou = True
         self.chiihou = True
         self.renhou = True
+        self.temp_furiten = False
+        self.riichi_furiten = False
         
     def __str__(self):
         return str(self.hand) + ' ' + str(self.melds)
@@ -68,13 +73,25 @@ class Player:
         hand = discord.File(hand_picture, filename = "hand.png")
         if not dm:
             dm = await self.disc.create_dm()
-        await dm.send(file = hand)
+        await dm.send('your hand', file = hand)
+        
+        discard = Tile('8','z')
+        
         query = "What tile do you want to discard?\n" + str(self.hand)
-        try:
-            discard = await self.user_input(query)
-            discard = Tile(discard[0],discard[1])
-        except asyncio.exceptions.TimeoutError:
-            discard = random.choice(self.hand.tiles)
+        
+        while discard not in self.hand.tiles:
+            try:
+                discard = await self.user_input(query)
+                discard = Tile(discard[0],discard[1])
+            except asyncio.exceptions.TimeoutError:
+                discard = random.choice(self.hand.tiles)
+            except ValueError:
+                discard = Tile('8','z')
+            except IndexError:
+                discard = Tile('8','z')
+            query = "Invalid discard, please try again."
+        
+        self.temp_furiten = False
         
         self.hand.remove_tiles(discard)
         self.total_discards.add_tiles(discard)
@@ -82,46 +99,93 @@ class Player:
         self.discards.add_tiles(discard)
         
         hand_picture = player_image(self, True, True, str(discard))
-        hidden_hand = discord.File(hand_picture, filename = "hand.png")
-        await dm.send('opp vision', file = hidden_hand)
+#        hidden_hand = discord.File(hand_picture, filename = "hand.png")
+#        await dm.send('opp vision', file = hidden_hand)
         
         return discard, hand_picture
         
-    async def show_hand(self):
-        dm = self.disc.dm_channel
+    async def show_hand(self, dm = None):
+        
+        if dm is None:
+            dm = self.disc.dm_channel
         hand_picture = player_image(self, False, False)
         hand = discord.File(hand_picture, filename = "hand.png")
         if not dm:
             dm = await self.disc.create_dm()
-        await dm.send(file = hand)
+        await dm.send(str(self.disc) + "'s hand", file = hand)
     
     #TODO: account for melds (done?)
-    #TODO: invalid tiles
-    async def draw_discard(self, wall):
-        draw = wall.draw_tile(self)
+    async def draw_discard(self, game):
+        draw = game.wall.draw_tile(self)
+        
+        discard = Tile('8','z')
         
         dm = self.disc.dm_channel
         hand_picture = player_image(self, False, False, draw)
+        hand_picture.seek(0)
         hand = discord.File(hand_picture, filename = "hand.png")
         if not dm:
             dm = await self.disc.create_dm()
-        await dm.send(file = hand)
+        await dm.send('your hand', file = hand)
         
-        #image = makeImage(' '.join([str(self.hand), str(draw)]))
-        query = "What tile do you want to discard?\n" + str(self.hand) + ' ' + str(draw)
-        try:
-            discard = await self.user_input(query)
-            discard = Tile(discard[0],discard[1])
-        except asyncio.exceptions.TimeoutError:
+        tsumo = self.tsumo(draw, game)
+        if tsumo:
+            try:
+                choice = await self.user_input("Would you like to tsumo?")
+            except asyncio.exceptions.TimeoutError:
+                choice = 'y'
+            if choice == 'y' or choice == 'yes':
+                #TODO: figure out how to end the game and interrupt gameflow
+                result = dict()
+                result[self] = tsumo
+                raise GameOver(result, draw)
+        
+        ckan = self.ckan_tiles()
+        if ckan:
+            try:
+                choice = await self.user_input("Would you like to closed kan?")
+            except asyncio.exceptions.TimeoutError:
+                choice = 'n'
+            if choice == 'y' or choice == 'yes':
+                call = await self.ckan()
+                if call:
+                    discard, hidden_picture = self.draw_discard(game)
+                    self.rinshan = False
+                    return discard, hidden_picture
+                    
+        if self.in_riichi:
             discard = draw
+        else:
+            discard = await self.riichi(draw, game)
+        
+        if not discard:
+            #image = makeImage(' '.join([str(self.hand), str(draw)]))
+            discard = Tile('8','z')
+            query = "What tile do you want to discard?\n" + str(self.hand) + ' ' + str(draw)
+            
+            while discard not in self.hand.tiles and discard != draw:
+                try:
+                    discard = await self.user_input(query)
+                    discard = Tile(discard[0],discard[1])
+                except asyncio.exceptions.TimeoutError:
+                    discard = draw
+                except ValueError:
+                    discard = Tile('8','z')
+                except IndexError:
+                    discard = Tile('8','z')
+                query = "Invalid discard, please try again."
+        
+        
         
         if discard == draw:
             hidden_picture = player_image(self, True, True, str(discard))
         else:
             hidden_picture = player_image(self, True, False, str(discard))
         
-        hidden_hand = discord.File(hidden_picture, filename = "hand.png")
-        await dm.send('opp vision', file = hidden_hand)
+#        hidden_hand = discord.File(hidden_picture, filename = "hand.png")
+#        await dm.send('opp vision', file = hidden_hand)
+        
+        self.temp_furiten = False
         
         self.hand.add_tiles(draw)
         self.hand.remove_tiles(discard)
@@ -327,13 +391,16 @@ class Player:
                 meld = Meld(chosen_kan, opened = False)
                 self.melds.add_meld(meld)
                 self.hand.remove_tiles(chosen_kan)
+            self.rinshan = True
+            return True
         else:
             return False
         
     def furiten(self):
-        return any(tile in winning_tiles(str(self.hand)) for tile in self.total_discards.tiles)
+        perm_furiten = any(tile in winning_tiles(str(self.hand)) for tile in self.total_discards.tiles)
+        return perm_furiten or self.temp_furiten or self.riichi_furiten
     
-    async def riichi(self):
+    async def riichi(self, draw, game):
         
         #this *should* check the hand to make sure its closed        
         opened = [meld for meld in self.melds.melds if meld.opened]
@@ -343,31 +410,50 @@ class Player:
         
         #determine what tiles are discardable to be in tenpai
         
-        shanten = shanten_calculator(self.hand)
+        shanten = shanten_calculator(str(self.hand) + str(draw))
         if (shanten == 0 or shanten == -1) and self.points >= 1000 and not self.in_riichi:
             riichi_tiles = []
-            for tile in self.hand.tiles:
+            temp_hand = Tiles()
+            temp_hand.tiles = self.hand.tiles[:]
+            temp_hand.add_tiles(draw)
+            for tile in temp_hand.tiles:
                 temp = Tiles()
-                temp.tiles = self.hand.tiles[:]
+                temp.tiles = temp_hand.tiles[:]
                 temp.remove_tiles(tile)
-                if winning_tiles(temp):
+                if winning_tiles(str(temp)) and tile not in riichi_tiles:
                     riichi_tiles.append(tile)
             
-            try:
-                query = "Which tile would you like to riichi on? Type cancel to cancel riichi.\n" + ' '.join(map(str, riichi_tiles))
-                choice = await self.user_input(query)
-            except asyncio.exceptions.TimeoutError:
-                choice = 'cancel'
-            
-            if choice == 'cancel':
-                return False
+            if riichi_tiles:
+                try:
+                    reach = await self.user_input('Would you like to riichi?')
+                except asyncio.exceptions.TimeoutError:
+                    reach = 'n'
+                if reach != 'y' and reach != 'yes':
+                    return False
             else:
-                riichi_tile = [tile for tile in riichi_tiles if str(tile) == choice]
-            if not riichi_tile:
                 return False
-            self.discard_tile(choice)
+            
+            discard = Tile('8','z')
+            while discard not in self.hand.tiles and discard != draw:
+                try:
+                    query = "Which tile would you like to riichi on? Type cancel to cancel riichi.\n" + ' '.join(map(str, riichi_tiles))
+                    discard = await self.user_input(query)
+                    discard = Tile(discard[0],discard[1])
+                except asyncio.exceptions.TimeoutError:
+                    return False
+                except ValueError:
+                    discard = Tile('8','z')
+                except IndexError:
+                    discard = Tile('8','z')
+
+            #self.discard_tile(choice)
+            if game.tenhou and game.wall.remaining > 65:
+                self.double_riichi = True
             self.in_riichi = True
+            self.ippatsu = True
             self.points -= 1000
+            game.riichi += 1
+            return discard
         else:
             return False
                 
@@ -380,7 +466,7 @@ class Player:
         '''
         
     def ron(self, discard, game):
-        if discard in winning_tiles(self.hand) and self.furiten() == False:
+        if discard in winning_tiles(str(self.hand)) and self.furiten() == False:
             
             dora = str(game.dora)
             if self.in_riichi:
@@ -389,18 +475,18 @@ class Player:
             dora_indicators = TilesConverter.one_line_string_to_136_array(dora)
             
             calculator = HandCalculator()
-            #if (is last tile in wall):
-            #   houtei = True
-            #if (no actions previously):
-            #   renhou = True
-            #if (shominkan):
-            #   chankan = True
-            #player wind
-            #round wind
             houtei = False
             renhou = False
+            
+            if game.wall.remaining == 0:
+               houtei = True
+            if game.tenhou and game.wall.remaining > 65:
+               renhou = True
+            #if (shominkan):
+            #   chankan = True
             chankan = False
-            config = HandConfig(is_riichi = self.in_riichi,\
+            config = HandConfig(options = OptionalRules(has_open_tanyao = True),\
+                                is_riichi = self.in_riichi,\
                                 is_ippatsu = self.ippatsu,\
                                 is_daburu_riichi = self.double_riichi,\
                                 is_houtei = houtei,\
@@ -446,12 +532,12 @@ class Player:
             if result.yaku:
                 return result
             else:
-                return 'No yaku'
+                return False
         else:
             return False
     
     def tsumo(self, draw, game):
-        if draw in winning_tiles(self.hand):
+        if draw in winning_tiles(str(self.hand)):
             calculator = HandCalculator()
             
             dora = str(game.dora)
@@ -459,26 +545,23 @@ class Player:
                 dora += str(game.ura_dora)
                 
             dora_indicators = TilesConverter.one_line_string_to_136_array(dora)
-        
-            #if (is last tile in wall):
-            #   haitei = True
-            #if (no actions previously):
-            #   if (is dealer):
-            #       tenhou = True
-            #   else:
-            #       chiihou = True
-            #if ():
-            #   chankan = True
-            #player wind
-            #round wind
-            rinshan = False
+            
             haitei = False
             tenhou = False
             chiihou = False
-            config = HandConfig(is_tsumo = True,\
+            if game.wall.remaining == 0:
+               haitei = True
+            if game.tenhou and game.wall.remaining > 65:
+               if self.seat == EAST:
+                   tenhou = True
+               else:
+                   chiihou = True
+                   
+            config = HandConfig(options = OptionalRules(has_open_tanyao = True),\
+                                is_tsumo = True,\
                                 is_riichi = self.in_riichi,\
                                 is_ippatsu = self.ippatsu,\
-                                is_rinshan = rinshan,\
+                                is_rinshan = self.rinshan,\
                                 is_haitei = haitei,\
                                 is_daburu_riichi = self.double_riichi,\
                                 is_tenhou = tenhou,\
@@ -522,17 +605,17 @@ class Player:
             if result.yaku:
                 return result
             else:
-                return 'No yaku'
+                return False
         else:
             return False
             
-    async def user_input(self, query):
+    async def user_input(self, query, timeout = 25.0):
         dm = self.disc.dm_channel
         if not dm:
             dm = await self.disc.create_dm()
         await dm.send(query)
         def check(msg):
             return msg.channel == dm and msg.author == self.disc
-        response = await self.client.wait_for('message', check = check, timeout = 25.0)
+        response = await self.client.wait_for('message', check = check, timeout = timeout)
         return response.content
     
