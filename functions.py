@@ -1,27 +1,14 @@
-# -*- coding: utf-8 -*-
-import json
-import re
-from functools import reduce
-from tkinter import (END, INSERT, WORD, BooleanVar, StringVar, Tk, W,
-                     messagebox, scrolledtext, ttk)
-import numpy as np
-
-from collections import OrderedDict
-
-import random
-import requests
-from PIL import Image
-
 from mahjong.hand_calculating.hand import HandCalculator
 from mahjong.tile import TilesConverter
 from mahjong.hand_calculating.hand_config import HandConfig
-from mahjong.meld import Meld as mjMeld
 from mahjong.shanten import Shanten
 
-from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
-from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
+from tiles import Tiles, OneOfEach
 
+#computes what tiles would complete a given (13 - 3n)-tile hand.
+#returns nothing (empty list) if hand is not in tenpai
+#converts tile objects or lists of tiles to the appropriate tenhou/majsoul notation
 def winning_tiles(tiles):
     if isinstance(tiles,str):
         tiles = tiles.replace(' ','')
@@ -33,7 +20,10 @@ def winning_tiles(tiles):
         temp = Tiles()
         temp.add_tiles(tiles)
         return winning_tiles(str(temp))
-    
+
+#computes what tiles would improve a given (13 - 3n)-tile hand.
+#probably bugs out if you give it the wrong number of tiles 
+#converts tile objects or lists of tiles to the appropriate tenhou/majsoul notation
 def ukeire(tiles):
     if isinstance(tiles,str):
         tiles = tiles.replace(' ','')
@@ -46,13 +36,20 @@ def ukeire(tiles):
         temp = Tiles()
         temp.add_tiles(tiles)
         return ukeire(str(temp))
-        
+
+#computes a rough estimate of the value of a given hand
+#ignores conditional yaku such as riichi, ippatsu, haitei, etc
+#for a simplified calculation of how much the hand is worth
+#see the mahjong library for details regarding the returned object
 def hand_calculator(tiles, win_tile, config = HandConfig()):
     calculator = HandCalculator()
     tiles = TilesConverter.one_line_string_to_136_array(str(tiles))
     win_tile = TilesConverter.one_line_string_to_136_array(str(win_tile))[0]
     return calculator.estimate_hand_value(tiles, win_tile, config = config)
 
+#computes the shanten of a given (14 - 3n) tile hand
+#returns -2 if you give it an invalid hand, i think
+#-1 is a winning hand, 0 is tenpai, 1 is iishanten, etc
 def shanten_calculator(tiles):
     shanten = Shanten()
     tiles = TilesConverter.one_line_string_to_34_array(str(tiles))

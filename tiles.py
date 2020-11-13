@@ -1,30 +1,17 @@
-# -*- coding: utf-8 -*-
-import json
 import re
-from functools import reduce
-from tkinter import (END, INSERT, WORD, BooleanVar, StringVar, Tk, W,
-                     messagebox, scrolledtext, ttk)
 import numpy as np
-
-from collections import OrderedDict
-
 import random
-import requests
-from PIL import Image
 
-from mahjong.hand_calculating.hand import HandCalculator
-from mahjong.tile import TilesConverter
-from mahjong.hand_calculating.hand_config import HandConfig
-from mahjong.meld import Meld as mjMeld
-from mahjong.shanten import Shanten
-
-from mahjong.constants import EAST, SOUTH, WEST, NORTH
-
+#dumb luck parameters pls ignore
 luck_min = -100
 luck_max = 100
 
 class Tile:
     
+    #value vs true value is only because of red fives
+    #having some things be strings and some things be ints is partially laziness
+    #but also because it minimizes the amount of conversions required as well as
+    #makes the whole chii check easier
     def __init__(self, value, suit):
         self.value = value
         self.suit = suit
@@ -35,9 +22,17 @@ class Tile:
     def __str__(self):
         return self.value + self.suit
     
+    #this kind of fucks with certain things because it makes red 5s functionally
+    #equivalent to regular 5s in most of the code, so anything that checks equivalence
+    #(for example, removing tiles from hand) would treat them as the same object
+    #so special precautions need to be taken as to not have that happen
+    #that being said, it also means that sorting the hand automatically groups 
+    #regular 5s with red 5s so i'd consider that worth going through the trouble for
     def __eq__(self, other):
         return self.true_value == other.true_value and self.suit == other.suit
     
+    #see the Wall object's draw_tiles function for an explanation what this is for
+    #tl;dr luck stat influencing draws, isnt implemented anywhere yet
     def influence(self, weights, wall, luck, luck_mode = 0):
         #surrounding = lambda x: range(max(i-2,1, min(i+3,10)))
         surrounding = {1:['1','2','3'],\
@@ -71,6 +66,8 @@ class Tiles:
     def __init__(self):
         self.tiles = []
     
+    #no real safety check to prevent you from getting like 1000 copies of the same tile
+    #dont really think it matters though
     def add_tiles(self, tiles):
         
         if isinstance(tiles,str):
@@ -85,6 +82,9 @@ class Tiles:
             for tile in tiles:
                 self.add_tiles(str(tile))
                 
+    #removing a 5 keeps the red 5 in the hand
+    #probably bugs out if you try to remove a tile not in the hand already
+    #but theoretically other parts of the code prevent this from happening
     def remove_tiles(self, tiles):
         
         if isinstance(tiles,str):
@@ -111,6 +111,7 @@ class Tiles:
     def add_tile_list(self, lst):
         self.tiles.extend(lst)
                 
+    #tenhou/majsoul standard tile notation
     def __str__(self):
         suits = ['m', 'p', 's', 'z']
         tiles = []
@@ -151,6 +152,8 @@ class Wall(Tiles):
         dora.add_tiles(str(indicator[0]))
         self.remove_tiles(str(indicator[0]))
         
+    #the luck variable is a stupid meme i decided to add and will probably be implemented
+    #as a fun game mode later on
     def draw_tile(self, player):
         
         draw = random.choices(self.tiles, k = 1)[0]
@@ -164,6 +167,8 @@ class Wall(Tiles):
         self.remaining -= 1
         return draw
         
+#useful for brute-force functions like ukeire and winning_tiles
+#probably also useful for brute force AI algorithms as well
 class OneOfEach(Tiles):
     
     def __init__(self):
@@ -180,6 +185,9 @@ class Hand(Tiles):
     def __init__(self):
         Tiles.__init__(self)
     
+#there is another meld object in the mahjong library, but having this one be a subclass
+#of tiles maintains some level of consistency as well as functionality with some
+#of the other code i've written
 class Meld(Tiles):
     
     def __init__(self, tiles, called = None, who = None, opened = False):
@@ -189,6 +197,7 @@ class Meld(Tiles):
         self.who = who
         self.opened = opened
         self.shominkan = False
+        self.shominkan_tile = None
 #        if called:
 #            self.tiles.append(called)
         

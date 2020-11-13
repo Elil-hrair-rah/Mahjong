@@ -1,38 +1,21 @@
-# -*- coding: utf-8 -*-
-import json
-import re
-from functools import reduce
-from tkinter import (END, INSERT, WORD, BooleanVar, StringVar, Tk, W,
-                     messagebox, scrolledtext, ttk)
-import numpy as np
-
-from collections import OrderedDict
-
 import random
-import requests
-from PIL import Image
 
 from mahjong.hand_calculating.hand import HandCalculator
 from mahjong.tile import TilesConverter
 from mahjong.hand_calculating.hand_config import HandConfig, OptionalRules
 from mahjong.meld import Meld as mjMeld
-from mahjong.shanten import Shanten
 
 from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
 import discord
 
-from graphics import player_image, makeImage, makeYamaImage
-from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
+from graphics import player_image
+from tiles import Tile, Tiles, Hand, Meld, Melds, Discards
 from functions import shanten_calculator, winning_tiles 
 from errorhandling import GameOver
 
 import asyncio
 
-
-
-
-        
 
 class Player:
     
@@ -66,7 +49,7 @@ class Player:
         #image = makeImage(' '.join([str(self.hand), str(draw)]))
         self.hand.add_tiles(draw)
         
-    #TODO: test this function
+
     async def discard_tile(self):
         dm = self.disc.dm_channel
         hand_picture = player_image(self, False, False)
@@ -95,12 +78,11 @@ class Player:
         
         self.hand.remove_tiles(discard)
         self.total_discards.add_tiles(discard)
+        #TODO: implement a visible discard pile
         #if tile is not stolen:
         self.discards.add_tiles(discard)
         
         hand_picture = player_image(self, True, True, str(discard))
-#        hidden_hand = discord.File(hand_picture, filename = "hand.png")
-#        await dm.send('opp vision', file = hidden_hand)
         
         return discard, hand_picture
         
@@ -114,7 +96,7 @@ class Player:
             dm = await self.disc.create_dm()
         await dm.send(str(self.disc) + "'s hand", file = hand)
     
-    #TODO: account for melds (done?)
+
     async def draw_discard(self, game):
         draw = game.wall.draw_tile(self)
         
@@ -135,13 +117,12 @@ class Player:
             except asyncio.exceptions.TimeoutError:
                 choice = 'y'
             if choice == 'y' or choice == 'yes':
-                #TODO: figure out how to end the game and interrupt gameflow
                 result = dict()
                 result[self] = tsumo
                 raise GameOver(result, draw)
         
-        ckan = self.ckan_tiles()
-        if ckan:
+        ckan = self.ckan_tiles(draw)
+        if ckan and game.num_kan < 4:
             try:
                 choice = await self.user_input("Would you like to closed kan?")
             except asyncio.exceptions.TimeoutError:
@@ -149,6 +130,7 @@ class Player:
             if choice == 'y' or choice == 'yes':
                 call = await self.ckan()
                 if call:
+                    game.add_dora()
                     discard, hidden_picture = self.draw_discard(game)
                     self.rinshan = False
                     return discard, hidden_picture
@@ -159,7 +141,6 @@ class Player:
             discard = await self.riichi(draw, game)
         
         if not discard:
-            #image = makeImage(' '.join([str(self.hand), str(draw)]))
             discard = Tile('8','z')
             query = "What tile do you want to discard?\n" + str(self.hand) + ' ' + str(draw)
             
@@ -181,10 +162,7 @@ class Player:
             hidden_picture = player_image(self, True, True, str(discard))
         else:
             hidden_picture = player_image(self, True, False, str(discard))
-        
-#        hidden_hand = discord.File(hidden_picture, filename = "hand.png")
-#        await dm.send('opp vision', file = hidden_hand)
-        
+                
         self.temp_furiten = False
         
         self.hand.add_tiles(draw)
@@ -197,6 +175,9 @@ class Player:
         await dm.send('final hand', file = final_hand)
         return discard, hidden_picture
     
+#a bunch of functions to check if a valid call can be made
+#chii is a pain in the ass to simplify, especially because of red fives
+#duplicate fives might still be displayed separated as options but i dont think that matters
     def chii_tiles(self, discard):
         if discard.suit == 'z':
             return False
@@ -250,6 +231,7 @@ class Player:
                 return search
         return False
         
+#distinguish between open and closed kan because they have different conditions
     def okan_tiles(self, discard):
         search = self.pon_tiles(discard)
         if search:
@@ -257,9 +239,12 @@ class Player:
                 return search
         return False
         
-    def ckan_tiles(self):
+    def ckan_tiles(self, draw):
+        hand = Tiles()
+        hand.tiles = self.hand.tiles[:]
+        hand.tiles.add_tiles(draw)
         search = []
-        quad = [tile for tile in self.hand.tiles if self.hand.tiles.count(tile) == 4]
+        quad = [tile for tile in hand.tiles if hand.tiles.count(tile) == 4]
         while len(quad) > 0:
             first_quad = [tile for tile in quad if tile == quad[0]]
             search.append(first_quad)
@@ -269,8 +254,8 @@ class Player:
         pon = [meld for meld in self.melds.melds if meld.tiles.count(meld.tiles[0]) == 3]
         if pon:
             for meld in pon:
-                if meld.tiles[0] in self.hand.tiles:
-                    search.append([meld, [tile for tile in self.hand.tiles if tile == meld.tiles[0]][0]])
+                if meld.tiles[0] in hand.tiles:
+                    search.append([meld, [tile for tile in hand.tiles if tile == meld.tiles[0]][0]])
         if search:
             return search
         return False
@@ -364,8 +349,10 @@ class Player:
         else:
             return False
         
-    async def ckan(self):
-        ckan_tiles = self.ckan_tiles()
+    #im still not sure closed kans properly work, and it needs a bit of testing in live games
+    #a distinction is made between fully closed kans and added kans because of hand closed vs open
+    async def ckan(self, draw):
+        ckan_tiles = self.ckan_tiles(draw)
         if ckan_tiles:
             if len(ckan_tiles) > 1:
                 try:
@@ -465,6 +452,8 @@ class Player:
             return False
         '''
         
+    #has open tanyao enabled but changing that is simple
+    #can probably add aotenjou for some fun at some point
     def ron(self, discard, game):
         if discard in winning_tiles(str(self.hand)) and self.furiten() == False:
             
@@ -536,6 +525,8 @@ class Player:
         else:
             return False
     
+    #has open tanyao enabled but changing that is simple
+    #can probably add aotenjou for some fun at some point
     def tsumo(self, draw, game):
         if draw in winning_tiles(str(self.hand)):
             calculator = HandCalculator()

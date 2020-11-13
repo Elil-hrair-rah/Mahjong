@@ -1,30 +1,13 @@
-# -*- coding: utf-8 -*-
 import io
-import json
 import re
 from functools import reduce
-from tkinter import (END, INSERT, WORD, BooleanVar, StringVar, Tk, W,
-                     messagebox, scrolledtext, ttk)
-import numpy as np
-
-from collections import OrderedDict
 
 import random
-import requests
 from PIL import Image
 
-from mahjong.hand_calculating.hand import HandCalculator
-from mahjong.tile import TilesConverter
-from mahjong.hand_calculating.hand_config import HandConfig
-from mahjong.meld import Meld as mjMeld
-from mahjong.shanten import Shanten
+from tiles import Tile, Tiles
 
-from mahjong.constants import EAST, SOUTH, WEST, NORTH
-
-#from player import Player
-from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
-
-''' testing code
+''' testing code, probably doesnt work properly given some of the adjustments i've made so far
 
 alsonotbob = Player('anb',3, 1)
 bob = Player('bob', 1, 2)
@@ -35,7 +18,7 @@ tile2 = Tile('1','s')
 tile3 = Tile('6','p')
 tile4 = Tile('7','s')
 bob.seat = SOUTH
-game = Game([notbob, alsonotbob, alsonotbob, alsonotbob])
+game = Game([notbob, alsonotbob, alsonotbob, alsonotbob], 1)
 await bob.pon(tile1, game)
 await bob.chii(tile2, game)
 bob.seat = NORTH
@@ -47,6 +30,20 @@ await bob.ckan()
 
 '''
 
+#ok so if you're working with this and wondering why images dont work properly
+#keep in mind that the images are streams and so every time you generate an image
+#using a stream the image gets "used up" and the pointer ends up at the end of the
+#byte string that represents the image (or something like that, i dont really know what im talking about)
+#basically if you're using this and the image isnt showing up properly just apply the function
+#image.seek(0) and the image should display/send/etc properly again
+#this only matters if you try to use the same image multiple times in the same function
+#or are using an image in a function then passing it through to another one
+
+#heavily edited version of the image generation from the majsoul generator app
+#https://github.com/watterle/majsoul-generator
+#generates an image of a player's hand with melds and rotated tiles in appropriate locations
+#can display opponents' hands with melds visible, as well as distinguishes between tedashi and tsumogiri
+#if the hand doesn't have any melds, it just redirects to the makeImage function
 def player_image(player, hidden, tsumogiri, *args):
 #    if not isinstance(player, Player):
 #        return False
@@ -58,7 +55,8 @@ def player_image(player, hidden, tsumogiri, *args):
                 parts = ['x' * len(player.hand) + 'z']
             else:
                 location = random.randint(1,len(player.hand))
-                parts = [' '.join(['x' * location + 'z', 'x' * (len(player.hand) - location) + 'z'])]
+                parts = ['x' * location + 'z']
+                parts.append('x' * (len(player.hand) - location) + 'z')
         else:
             parts = [str(player.hand)]
         rotated = []
@@ -161,7 +159,7 @@ def player_image(player, hidden, tsumogiri, *args):
             
             left += image.size[0]
             
-#        target.save('{}-{}.png'.format(player.name, player.disc_id), quality=100)
+#        target.save('{}-{}.png'.format(player.disc, player.disc_id), quality=100)
         
         image = io.BytesIO()
         target.save(image, format = 'PNG')
@@ -175,9 +173,13 @@ def player_image(player, hidden, tsumogiri, *args):
             return makeImage(tiles, hidden, tsumogiri, args)
         return makeImage(tiles, hidden, tsumogiri)
         
+#the image generation function from the majsoul image generator found at 
+#https://github.com/watterle/majsoul-generator
+#with some added functionality to be able to display an opponent's hand and discards
+#closed, along with the ability to specify whether or not a discard was tedashi or tsumogiri
 def makeImage(text, hidden = False, tsumogiri = False, *args):
     if not text:
-        return 0
+        raise Exception('Text to generate image not found')
     image_list = []
     if hidden:
         length = len(re.findall(r'([0-9x])', text))
@@ -221,6 +223,10 @@ def makeImage(text, hidden = False, tsumogiri = False, *args):
     image.seek(0)
     return image
 
+#largely untouched from the majsoul generator app
+#https://github.com/watterle/majsoul-generator
+#generates dora images
+#unused for now
 def makeYamaImage(text):
     if text:
         image_list = []

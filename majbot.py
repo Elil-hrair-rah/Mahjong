@@ -1,39 +1,33 @@
-# -*- coding: utf-8 -*-
-
-import io
 import json
-import re
-from functools import reduce
-from tkinter import (END, INSERT, WORD, BooleanVar, StringVar, Tk, W,
-                     messagebox, scrolledtext, ttk)
-import numpy as np
-
-from collections import OrderedDict
 
 import random
 import requests
-from PIL import Image
 
 from mahjong.hand_calculating.hand import HandCalculator
-from mahjong.tile import TilesConverter
 from mahjong.hand_calculating.hand_config import HandConfig
-from mahjong.meld import Meld as mjMeld
-from mahjong.shanten import Shanten
 
 from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
 from player import Player
-from tiles import Tile, Tiles, Wall, OneOfEach, Dora, Hand, Meld, Melds, Discards
+from tiles import Tile, Wall, Dora, Hand, Melds, Discards
 from graphics import player_image, makeImage, makeYamaImage
-from functions import winning_tiles, ukeire, hand_calculator, shanten_calculator
+from functions import winning_tiles, ukeire, shanten_calculator
 from errorhandling import GameOver
 
+import os
+from dotenv import load_dotenv
 
 import discord
 from discord.ext import commands
 
 import asyncio
 
+intents = discord.Intents(messages = True, guilds = True, members = True, reactions = True)
+discordclient = commands.Bot(command_prefix = 'm!', intents = intents)
+
+load_dotenv()
+
+#will implement full hanchans at some point
 class Match:
     
     def __init__(self, players, match_id, aka = 3):
@@ -107,6 +101,7 @@ class Game:
         self.honba = 0
         self.riichi = 0
         
+        self.num_kan = 0
         
         #que
         #self.dora_tiles = Tiles()
@@ -191,12 +186,52 @@ class Game:
                         winner.show_hand(dm)
                     active_users.pop(player)
                 active_games.remove(self)
-                        
-
+    
+        #TODO: add nagashi
+        tenpai_players = [player for player in self.players if winning_tiles(player)]
+        noten_players = [player for player in self.players if player not in tenpai_players]
+        
+        draw_string = 'Draw\n'
+        
+        if 0 < len(tenpai_players) < 4:
+            payment = 3000 / len(noten_players)
+            payout = 3000 / len(tenpai_players)
+            
+            draw_string += 'The following players were in tenpai:\n'
+            
+            for player in tenpai_players:
+                draw_string += str(player.disc) + '\n'
+                player.points += payout
+            for player in noten_players:
+                player.points -= payment
+        
+        if len(tenpai_players) == 0:
+            draw_string += 'No players were in tenpai.'
+        
+        if len(tenpai_players) == 4:
+            draw_string += 'All players were in tenpai.'
+        
+        scores = 'Scores:\n'
+        for player in self.players:
+            scores.append(str(player.disc) + ': ' + str(player.points))
+            
+        #may also need to compact this due to discord's ratelimits
+        for player in self.players:
+            dm = player.disc.dm_channel
+            if not dm:
+                dm = await player.disc.create_dm()
+            await dm.send(draw_string)
+            for player in tenpai_players:
+                await player.show_hand(dm)
+            await dm.send(scores)
                 
                     
 
-    #TODO: test this
+    #processes player discards
+    #gives priority to ron
+    #kan and pon have the same priority for obvious reasons
+    #gives next player in line the option to chii if available
+    #two players should not be able to call the same tile unless someone cheated a bunch of tiles into their hand
     async def process_discard(self, discard):
         called = False
         other_players = [player for player in self.players if player is not self.active_player]
@@ -221,7 +256,7 @@ class Game:
         
         for player in other_players:
             kan = player.okan_tiles(discard)
-            if kan:
+            if kan and self.num_kan < 4:
                 try:
                     choice = await player.user_input('Would you like to kan on the ' + str(discard) + '?')
                 except asyncio.exceptions.TimeoutError:
@@ -231,6 +266,7 @@ class Game:
                     if called:
                         self.active_player = player
                         discard, hidden_hand = await self.active_player.draw_discard(self.wall)
+                        self.add_dora()
                     
             pon = player.pon_tiles(discard)
             if pon:
@@ -245,7 +281,7 @@ class Game:
                         discard, hidden_hand = await self.active_player.discard_tile()
         next_player = self.next_player()
         chii = next_player.chii_tiles(discard)
-        if chii:
+        if chii and not called:
             try:
                 choice = await next_player.user_input('Would you like to chii on the ' + str(discard) + '?')
             except asyncio.exceptions.TimeoutError:
@@ -277,117 +313,15 @@ class Game:
 calculator = HandCalculator()
 config = HandConfig()
 
-def countPoint(data):
-    def getYakuInfo(yaku_id, ura):
-        ids = [
-            1, 2, 3, 4, 5, 6, 71, 72, 73, 74, 75, 8, 9, 10, 11, 12, 13, 14, 15,
-            16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
-            33, 34, 35, 36, 37, 38, 39, 40, 41
-        ]
-        names = [
-            "Riichi", "Ippatsu", "Tsumo", "Pinfu", "Tanyao", "Iipeikou", "Prevalent wind", "Seat wind",
-            "Haku", "Hatsu", "Chun", "Haitei", "Houtei", "Chankan", "Rinshan", "Double riichi", "Chiitoi",
-            "Ittsu", "Sanshoku doujun", "Chanta", "Sanshoku doukou", "Sanankou", "Toitoi", "Shousangen", "Honroutou", "Sankantsu",
-            "Honitsu", "Junchan", "Ryanpeikou", "Chinitsu", "Kokushi", "Daisangen", "Suuankou", "Shousuushi", "Tsuuiisou",
-            "Ryuuiisou", "Chinroutou", "Chuuren", "Suukantsu", "Tenhou", "Chiihou", "Kokushi 13 waits", "Daisuushii", "Suuankou tanki",
-            "Junsei Chuuren"
-        ]
-        fan_richi = [
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2,
-            2, 2, 2, 2, 3, 3, 3, 6, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
-            26, 26, 26, 26
-        ]
-        fan_fuuro = [
-            0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 2, 2,
-            2, 2, 2, 2, 2, 2, 0, 5, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
-            26, 26, 26, 26
-        ]
-        if int(yaku_id) // 100 == 1:
-            return "{}\t{} Han\n".format("Dora", int(yaku_id) % 100)
-        elif int(yaku_id) // 100 == 2:
-            return "{}\t{} Han\n".format("Akadora", int(yaku_id) % 100)
-        elif int(yaku_id) // 100 == 3:
-            return "{}\t{} Han\n".format("Uradora", int(yaku_id) % 100)
-        return "{}\t{} Han\n".format(
-            names[ids.index(yaku_id)], fan_richi[ids.index(yaku_id)]
-            if ura else fan_fuuro[ids.index(yaku_id)])
-
-    headers = {
-        'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:68.0) Gecko/20100101 Firefox/68.0',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language':
-        'zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2',
-        'Referer': 'https://www.diving-fish.com/mahjong/point',
-        'Content-Type': 'application/json;charset=utf-8',
-        'Origin': 'https://www.diving-fish.com',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Pragma': 'no-cache',
-        'Cache-Control': 'no-cache',
-    }
-    result = requests.post('https://www.diving-fish.com:8000/cal',
-                           headers=headers,
-                           data=json.dumps(data)).json()
-    
-    print(result)
-    
-    if result.get('status') != 200:
-        print('Error', 'Value not calculated, please recheck syntax.')
-        return 'chombo'
-    
-    
-
-
-    for x in result['data']['yakus']:
-        print(INSERT, getYakuInfo(x, result['data']['inner']))
-    print(
-        INSERT, 'Value\t{} Fu - {} Han\n'.format(result['data']['fu'],
-                                      result['data']['fan']))
-    print(
-        INSERT, 'Score\t{}\n'.format((
-            "{} ALL".format(result['data']['perPoint'] * 2 // 100 *
-                            100) if result['data']['tsumo'] else (
-                                result['data']['perPoint'] * 6 // 100 * 100)
-        ) if result['data']['isQin'] else ("{} - {}".format(
-            result['data']['perPoint'], result['data']['perPoint'] *
-            2) if result['data']['tsumo'] else (result['data']['perPoint'] *
-                                                4 // 100 * 100))))
-                                                
-def makeData(hand = '44455m', riichi = False):
-    postdata = {
-        "inner": hand,
-        "outer": '111m 222m 333m',
-        "dora": '12m',
-        "innerdora": '45m',
-        "selfwind": 1,
-        "placewind": 2,
-        "reach": riichi,
-        "wreach": False,
-        "yifa": False,
-        "tsumo": False,
-        "lingshang": False,
-        "qianggang": False,
-        "haidi": False,
-        "hedi": False,
-        "tianhe": False,
-        "dihe": False
-    }
-    return postdata
-
-whitelist = [422108792923095050,
-             634524535957356574,
-             120552456626241536,
-             606746521538527234]
+#test discord ids xd
+whitelist = os.getenv("WHITELIST").split(' ')
+whitelist = [int(disc_id) for disc_id in whitelist]
 
 pending_games = dict()
 active_users = dict()
 pending_users = []
 active_games = []
 active_matches = []
-
-intents = discord.Intents(messages = True, guilds = True, members = True, reactions = True)
-discordclient = commands.Bot(command_prefix = 'm!', intents = intents)
 
 
 async def user_input(query, player):
@@ -402,6 +336,9 @@ async def user_input(query, player):
     
 @discordclient.command()
 async def input_test(ctx, args):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         player = Player('bob', ctx.author, discordclient)
         response = await user_input(args, player)
@@ -411,6 +348,9 @@ async def input_test(ctx, args):
 
 @discordclient.command()
 async def player_input(ctx, args):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         player = Player('bob', ctx.author, discordclient)
         response = await player.user_input(args, discordclient)
@@ -420,6 +360,9 @@ async def player_input(ctx, args):
     
 @discordclient.command()
 async def graphics_test(ctx):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         player = Player('bob', ctx.author, discordclient)
         otherplayer = Player('notbob', 1, discordclient)
@@ -441,6 +384,9 @@ async def print_hand(ctx, arg):
     
 @discordclient.command()
 async def create_player(ctx):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     global active_users;
     if ctx.author.id in whitelist and ctx.author not in active_users:
         global active_games
@@ -465,6 +411,9 @@ async def player_hand(ctx):
     
 @discordclient.command()
 async def player_dd(ctx):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         if ctx.author in active_users:
             game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
@@ -478,6 +427,9 @@ async def player_dd(ctx):
     
 @discordclient.command()
 async def chii_test(ctx):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         player = Player('bob', ctx.author, discordclient, ctx.message.id)
         otherplayer = Player('notbob', 1, discordclient, ctx.message.id)
@@ -492,6 +444,9 @@ async def chii_test(ctx):
         
 @discordclient.command()
 async def pon_test(ctx):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         player = Player('bob', ctx.author, discordclient)
         otherplayer = Player('notbob', 1, discordclient)
@@ -507,6 +462,9 @@ async def pon_test(ctx):
 
 @discordclient.command()
 async def kan_test(ctx):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         player = Player('bob', ctx.author, discordclient)
         otherplayer = Player('notbob', 1, discordclient)
@@ -524,6 +482,9 @@ async def kan_test(ctx):
         
 @discordclient.command()
 async def riichi_test(ctx):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         player = Player(ctx.author.id, ctx.author, discordclient)
         otherplayer = Player('notbob', 1, discordclient)
@@ -594,6 +555,9 @@ async def on_raw_reaction_remove(reaction):
             
 @discordclient.command()
 async def dm(ctx, *arg):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         if arg:
             target = discordclient.get_user(int(arg[0]))
@@ -608,6 +572,9 @@ async def dm(ctx, *arg):
 
 @discordclient.command()
 async def pending_dm(ctx, key):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         for user in pending_games[int(key)]:
             dm = user.dm_channel
@@ -619,6 +586,9 @@ async def pending_dm(ctx, key):
 
 @discordclient.command()
 async def pending_game(ctx):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         await ctx.send(pending_games)
     else:
@@ -626,6 +596,9 @@ async def pending_game(ctx):
 
 @discordclient.command()
 async def active_user(ctx):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         await ctx.send(active_users)
     else:
@@ -633,6 +606,9 @@ async def active_user(ctx):
 
 @discordclient.command()
 async def active_game(ctx):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         await ctx.send(active_games)
     else:
@@ -640,6 +616,9 @@ async def active_game(ctx):
 
 @discordclient.command()
 async def pending_user(ctx):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     if ctx.author.id in whitelist:
         await ctx.send(pending_users)
     else:
@@ -647,6 +626,9 @@ async def pending_user(ctx):
         
 @discordclient.command()
 async def add_pending_user(ctx, arg):
+    ''' admin command
+    this is a command used for testing functionality and either doesnt work or shouldnt be used
+    '''
     global pending_users
     if ctx.author.id in whitelist:
         for user in active_users:
@@ -657,6 +639,8 @@ async def add_pending_user(ctx, arg):
 
 @discordclient.command()
 async def game(ctx):
+    ''' Start a game of mahjong
+    '''
     if str(ctx.message.channel.type) == "private":
         await ctx.send("This command does not work in DMs, as a game of mahjong requires 4 people to play. AI functionality does not yet exist.")
     else:
@@ -673,16 +657,17 @@ async def invite(ctx):
     await ctx.send('https://discord.com/oauth2/authorize?client_id=769708017993121822&permissions=387136&scope=bot')
 
 @discordclient.command()
-async def os(ctx):
+async def official_server(ctx):
     ''' The invite link for the official server.
     It probably doesn't exist yet.
     '''
     await ctx.send("it doesn't exist yet lol")
     
 @discordclient.command()
-async def waits(ctx, arg):
-    ''' The invite link for this bot.
-    If the link doesn't work, it's probably because the bot is in 100 servers and I haven't verified it.
+async def improvements(ctx, arg):
+    ''' A (13 - 3n)-tile improvement calculator.
+    Prints a list of tiles that can improve your hand (decrease the shanten count)
+    Except weird results if you enter the wrong number of tiles.
     '''
     tiles = ukeire(arg)
     tiles = [str(tile) for tile in tiles]
@@ -691,18 +676,20 @@ async def waits(ctx, arg):
     
 @discordclient.command()
 async def shanten(ctx, arg):
-    ''' A 14-tile shanten calculator.
+    ''' A (14 - 3n)-tile shanten calculator.
     -2 indicates an invalid hand, -1 indicates a winning hand, 0 indicates tenpai, etc
     '''
     await ctx.send(shanten_calculator(arg))
     
 @discordclient.command()
-async def agaripai(ctx, arg):
-    ''' The tiles you can win on.
+async def waits(ctx, arg):
+    ''' A (13 - 3n)-tile tenpai wait calculator.
+    Returns the tiles you can win on.
     '''
     agaripai = winning_tiles(arg)
     agaripai = [str(tile) for tile in agaripai]
     agaripai = ' '.join(agaripai)
     await ctx.send(agaripai)
 
-discordclient.run("NzY5NzA4MDE3OTkzMTIxODIy.X5S8cw.tSClXF6i-4i0Kl9bAyA3euDQciw")
+token = os.getenv("DISCORD_TOKEN")
+discordclient.run(token)
