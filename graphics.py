@@ -247,6 +247,6 @@ def makeYamaImage(text):
     #target.save('{}.png'.format(text if text else 'Yama'), quality=100)
 
     image = io.BytesIO()
-    image.save(image, format = 'PNG')
+    target.save(image, format = 'PNG')
     image.seek(0)
     return image

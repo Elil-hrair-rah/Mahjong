@@ -12,7 +12,7 @@ from player import Player
 from tiles import Tile, Wall, Dora, Hand, Melds, Discards
 from graphics import player_image, makeImage, makeYamaImage
 from functions import winning_tiles, ukeire, shanten_calculator
-from errorhandling import GameOver
+from errorhandling import GameOver, EndGame
 
 import os
 from dotenv import load_dotenv
@@ -57,6 +57,9 @@ class Game:
     def __init__(self, players, match_id, aka = 3):
         self.players = players
         self.match_id = match_id
+        
+        #temporary
+        self.round_wind = EAST
         
         self.wall = Wall(aka)
         
@@ -142,14 +145,14 @@ class Game:
                 self.turn_progress()
             except GameOver as result:
                 win_string = ''
-                for winner, score in result.items():
+                for winner, score in result.winner_result_dict.items():
                     
                     #ron
                     if score.cost['additional'] == 0:
                         self.active_player.points -= score.cost['main']
                         winner.points += score.cost['main']
-                        win_string.append(str(winner.disc) + ' has won by ron off ' + str(self.active_player.disc) +\
-                                          ' and won ' + score.cost['main'] + ' points.\n')
+                        win_string += str(winner.disc) + ' has won by ron off ' + str(self.active_player.disc) +\
+                                          ' and won ' + str(score.cost['main']) + ' points.\n'
                     #tsumo
                     else:
                         other_players = [player for player in self.players if player is not self.active_player]
@@ -163,13 +166,13 @@ class Game:
                                 player.points -= score.cost['additional']
                                 winner.points += score.cost['additional']
                                 score_change += score.cost['additional']
-                        win_string.append(str(winner.disc) + ' has won by tsumo and won ' + score.cost['main'] + ' points.\n')
+                        win_string += str(winner.disc) + ' has won by tsumo and won ' + str(score_change) + ' points.\n'
 
                 details = str(score) + '\nYaku:\n' + str(score.yaku) + '\nFu:\n' + str(score.fu_details)
                     
                 scores = 'Scores:\n'
                 for player in self.players:
-                    scores.append(str(player.disc) + ': ' + str(player.points))
+                    scores += str(player.disc) + ': ' + str(player.points) + '\n'
                     
                 global active_users
                 global active_games            
@@ -182,48 +185,49 @@ class Game:
                     await dm.send(win_string)
                     await dm.send(details)
                     await dm.send(scores)
-                    for winner in result.keys():
-                        winner.show_hand(dm)
-                    active_users.pop(player)
+                    for winner in result.winner_result_dict.keys():
+                        await winner.show_hand(dm)
+                    active_users.pop(player.disc)
                 active_games.remove(self)
-    
-        #TODO: add nagashi
-        tenpai_players = [player for player in self.players if winning_tiles(player)]
-        noten_players = [player for player in self.players if player not in tenpai_players]
-        
-        draw_string = 'Draw\n'
-        
-        if 0 < len(tenpai_players) < 4:
-            payment = 3000 / len(noten_players)
-            payout = 3000 / len(tenpai_players)
+                self.wall.remaining = -1
+        if self.wall.remaining == 0:
+            #TODO: add nagashi
+            tenpai_players = [player for player in self.players if winning_tiles(player.hand)]
+            noten_players = [player for player in self.players if player not in tenpai_players]
             
-            draw_string += 'The following players were in tenpai:\n'
+            draw_string = 'Draw\n'
             
-            for player in tenpai_players:
-                draw_string += str(player.disc) + '\n'
-                player.points += payout
-            for player in noten_players:
-                player.points -= payment
-        
-        if len(tenpai_players) == 0:
-            draw_string += 'No players were in tenpai.'
-        
-        if len(tenpai_players) == 4:
-            draw_string += 'All players were in tenpai.'
-        
-        scores = 'Scores:\n'
-        for player in self.players:
-            scores.append(str(player.disc) + ': ' + str(player.points))
+            if 0 < len(tenpai_players) < 4:
+                payment = 3000 / len(noten_players)
+                payout = 3000 / len(tenpai_players)
+                
+                draw_string += 'The following players were in tenpai:\n'
+                
+                for player in tenpai_players:
+                    draw_string += str(player.disc) + '\n'
+                    player.points += payout
+                for player in noten_players:
+                    player.points -= payment
             
-        #may also need to compact this due to discord's ratelimits
-        for player in self.players:
-            dm = player.disc.dm_channel
-            if not dm:
-                dm = await player.disc.create_dm()
-            await dm.send(draw_string)
-            for player in tenpai_players:
-                await player.show_hand(dm)
-            await dm.send(scores)
+            if len(tenpai_players) == 0:
+                draw_string += 'No players were in tenpai.'
+            
+            if len(tenpai_players) == 4:
+                draw_string += 'All players were in tenpai.'
+            
+            scores = 'Scores:\n'
+            for player in self.players:
+                scores += str(player.disc) + ': ' + str(player.points) + '\n'
+                
+            #may also need to compact this due to discord's ratelimits
+            for player in self.players:
+                dm = player.disc.dm_channel
+                if not dm:
+                    dm = await player.disc.create_dm()
+                await dm.send(draw_string)
+                for player in tenpai_players:
+                    await player.show_hand(dm)
+                await dm.send(scores)
                 
                     
 
@@ -255,42 +259,44 @@ class Game:
             raise GameOver(rons, discard)
         
         for player in other_players:
-            kan = player.okan_tiles(discard)
-            if kan and self.num_kan < 4:
-                try:
-                    choice = await player.user_input('Would you like to kan on the ' + str(discard) + '?')
-                except asyncio.exceptions.TimeoutError:
-                    choice = 'n'
-                if choice == 'yes' or choice == 'y':
-                    called = await player.okan(discard, self)
-                    if called:
-                        self.active_player = player
-                        discard, hidden_hand = await self.active_player.draw_discard(self.wall)
-                        self.add_dora()
-                    
-            pon = player.pon_tiles(discard)
-            if pon:
-                try:
-                    choice = await player.user_input('Would you like to pon on the ' + str(discard) + '?')
-                except asyncio.exceptions.TimeoutError:
-                    choice = 'n'
-                if choice == 'yes' or choice == 'y':
-                    called = await player.pon(discard, self)
-                    if called:
-                        self.active_player = player
-                        discard, hidden_hand = await self.active_player.discard_tile()
+            if not player.in_riichi:
+                kan = player.okan_tiles(discard)
+                if kan and self.num_kan < 4:
+                    try:
+                        choice = await player.user_input('Would you like to kan on the ' + str(discard) + '?')
+                    except asyncio.exceptions.TimeoutError:
+                        choice = 'n'
+                    if choice == 'yes' or choice == 'y':
+                        called = await player.okan(discard, self)
+                        if called:
+                            self.active_player = player
+                            discard, hidden_hand = await self.active_player.draw_discard(self.wall)
+                            self.add_dora()
+                        
+                pon = player.pon_tiles(discard)
+                if pon:
+                    try:
+                        choice = await player.user_input('Would you like to pon on the ' + str(discard) + '?')
+                    except asyncio.exceptions.TimeoutError:
+                        choice = 'n'
+                    if choice == 'yes' or choice == 'y':
+                        called = await player.pon(discard, self)
+                        if called:
+                            self.active_player = player
+                            discard, hidden_hand = await self.active_player.discard_tile()
         next_player = self.next_player()
-        chii = next_player.chii_tiles(discard)
-        if chii and not called:
-            try:
-                choice = await next_player.user_input('Would you like to chii on the ' + str(discard) + '?')
-            except asyncio.exceptions.TimeoutError:
-                choice = 'n'
-            if choice == 'yes' or choice == 'y':
-                called = await next_player.chii(discard, self)
-                if called:
-                    self.active_player = next_player
-                    discard, hidden_hand = await self.active_player.discard_tile()
+        if not next_player.in_riichi:
+            chii = next_player.chii_tiles(discard)
+            if chii and not called:
+                try:
+                    choice = await next_player.user_input('Would you like to chii on the ' + str(discard) + '?')
+                except asyncio.exceptions.TimeoutError:
+                    choice = 'n'
+                if choice == 'yes' or choice == 'y':
+                    called = await next_player.chii(discard, self)
+                    if called:
+                        self.active_player = next_player
+                        discard, hidden_hand = await self.active_player.discard_tile()
         if called:
             
             for player in self.players:
@@ -406,6 +412,19 @@ async def player_hand(ctx):
         player = [player for player in game.players if player.disc == ctx.author]
         await player[0].show_hand()
         await ctx.send('Hand Shown')
+    else:
+        await ctx.send('You are not in a game')
+        
+@discordclient.command()
+async def game_dora(ctx):
+    if ctx.author in active_users:
+        game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
+        dora_image = makeYamaImage(str(game.dora))
+        dora = discord.File(dora_image, filename = "hand.png")
+        dm = ctx.author.dm_channel
+        if not dm:
+            dm = await ctx.author.create_dm()
+        await dm.send("Dora", file = dora)
     else:
         await ctx.send('You are not in a game')
     

@@ -128,14 +128,15 @@ class Player:
             except asyncio.exceptions.TimeoutError:
                 choice = 'n'
             if choice == 'y' or choice == 'yes':
-                call = await self.ckan()
+                call = await self.ckan(draw)
                 if call:
                     game.add_dora()
-                    discard, hidden_picture = self.draw_discard(game)
+                    discard, hidden_picture = await self.draw_discard(game)
                     self.rinshan = False
                     return discard, hidden_picture
                     
         if self.in_riichi:
+            self.ippatsu = False
             discard = draw
         else:
             discard = await self.riichi(draw, game)
@@ -148,6 +149,13 @@ class Player:
                 try:
                     discard = await self.user_input(query)
                     discard = Tile(discard[0],discard[1])
+                    #dumb workaround to prevent players from discarding non-existant
+                    #red fives when they have a five in hand, or discarding
+                    #non-existant fives when they have a red five in hand
+                    in_hand = [tile for tile in self.hand.tiles if tile.suit == discard.suit and tile.value == discard.value]
+                    is_draw = discard.value == draw.value and discard.suit == draw.suit
+                    if not (in_hand or is_draw):
+                        discard = Tile('8','z')
                 except asyncio.exceptions.TimeoutError:
                     discard = draw
                 except ValueError:
@@ -242,7 +250,7 @@ class Player:
     def ckan_tiles(self, draw):
         hand = Tiles()
         hand.tiles = self.hand.tiles[:]
-        hand.tiles.add_tiles(draw)
+        hand.add_tiles(draw)
         search = []
         quad = [tile for tile in hand.tiles if hand.tiles.count(tile) == 4]
         while len(quad) > 0:
@@ -301,7 +309,7 @@ class Player:
             who = rotation.index(self.seat) - rotation.index(game.active_player.seat)
             who = relative_direction[who % 4]
             
-            if len(pon_tiles) > 2 and discard.true_value == 5 and discard.value != '0':
+            if len(pon_tiles) > 2 and discard.true_value == 5 and discard.value != '0' and discard.suit != 'z':
                 red_five = [tile for tile in pon_tiles if tile.value == '0']
                 reg_five = [tile for tile in pon_tiles if tile.value == '5']
                 try:
@@ -311,14 +319,12 @@ class Player:
                 if choice == 'cancel':
                     return False
                 elif choice == 'y' or choice == 'yes':
-                    print('choice yes')
                     meld = Meld([discard,red_five[0], reg_five[0]], called = discard,\
                                 opened = True, who = who)
                     self.melds.add_meld(meld)
                     self.hand.remove_tiles([red_five[0], reg_five[0]])
                     return True
                 elif choice == 'n' or choice == 'no':
-                    print('choice no')
                     meld = Meld([discard, reg_five[0], reg_five[1]], called = discard,\
                                 opened = True, who = who)
                     self.melds.add_meld(meld)
@@ -461,7 +467,7 @@ class Player:
             if self.in_riichi:
                 dora += str(game.ura_dora)
                 
-            dora_indicators = TilesConverter.one_line_string_to_136_array(dora)
+            dora_indicators = TilesConverter.one_line_string_to_136_array(dora, has_aka_dora = True)
             
             calculator = HandCalculator()
             houtei = False
@@ -474,7 +480,7 @@ class Player:
             #if (shominkan):
             #   chankan = True
             chankan = False
-            config = HandConfig(options = OptionalRules(has_open_tanyao = True),\
+            config = HandConfig(options = OptionalRules(has_open_tanyao = True, has_aka_dora = True),\
                                 is_riichi = self.in_riichi,\
                                 is_ippatsu = self.ippatsu,\
                                 is_daburu_riichi = self.double_riichi,\
@@ -495,11 +501,11 @@ class Player:
                 elif meld.tiles.count(meld.tiles[0]) == 3:
                     meld_type = mjMeld.PON
                 else:
-                    meld_type = mjMeld.CHII
+                    meld_type = mjMeld.CHI
                     
                     #not sure if the meld_type is necessary, but since it's not a hassle i'll leave it in
                 new_meld = mjMeld(meld_type = meld_type,\
-                                  tiles = TilesConverter.one_line_string_to_136_array(str(meld)),\
+                                  tiles = TilesConverter.one_line_string_to_136_array(str(meld), has_aka_dora = True),\
                                   opened = opened)
                 melds.append(new_meld)
                 
@@ -513,8 +519,8 @@ class Player:
                 #so the length of '222p' is 3 and the length of '1111m' is 4
                 meld_string += str(meld)[len(meld)-3:]
                 
-            hand = TilesConverter.one_line_string_to_136_array(str(self.hand) + str(discard) + str(meld_string))
-            discard = TilesConverter.one_line_string_to_136_array(str(discard))[0]
+            hand = TilesConverter.one_line_string_to_136_array(str(self.hand) + str(discard) + str(meld_string), has_aka_dora = True)
+            discard = TilesConverter.one_line_string_to_136_array(str(discard), has_aka_dora = True)[0]
             
             result = calculator.estimate_hand_value(hand, discard, melds = melds, \
                                                     dora_indicators = dora_indicators, config = config)
@@ -535,7 +541,7 @@ class Player:
             if self.in_riichi:
                 dora += str(game.ura_dora)
                 
-            dora_indicators = TilesConverter.one_line_string_to_136_array(dora)
+            dora_indicators = TilesConverter.one_line_string_to_136_array(dora, has_aka_dora = True)
             
             haitei = False
             tenhou = False
@@ -548,7 +554,7 @@ class Player:
                else:
                    chiihou = True
                    
-            config = HandConfig(options = OptionalRules(has_open_tanyao = True),\
+            config = HandConfig(options = OptionalRules(has_open_tanyao = True, has_aka_dora = True),\
                                 is_tsumo = True,\
                                 is_riichi = self.in_riichi,\
                                 is_ippatsu = self.ippatsu,\
@@ -571,11 +577,11 @@ class Player:
                 elif meld.tiles.count(meld.tiles[0]) == 3:
                     meld_type = mjMeld.PON
                 else:
-                    meld_type = mjMeld.CHII
+                    meld_type = mjMeld.CHI
                     
                     #not sure if the meld_type is necessary, but since it's not a hassle i'll leave it in
                 new_meld = mjMeld(meld_type = meld_type,\
-                                  tiles = TilesConverter.one_line_string_to_136_array(str(meld)),\
+                                  tiles = TilesConverter.one_line_string_to_136_array(str(meld), has_aka_dora = True),\
                                   opened = opened)
                 melds.append(new_meld)
                 
@@ -589,8 +595,8 @@ class Player:
                 #so the length of '222p' is 3 and the length of '1111m' is 4
                 meld_string += str(meld)[len(meld)-3:]
                 
-            hand = TilesConverter.one_line_string_to_136_array(str(self.hand) + str(draw) + str(meld_string))
-            draw = TilesConverter.one_line_string_to_136_array(str(draw))[0]
+            hand = TilesConverter.one_line_string_to_136_array(str(self.hand) + str(draw) + str(meld_string), has_aka_dora = True)
+            draw = TilesConverter.one_line_string_to_136_array(str(draw), has_aka_dora = True)[0]
             result = calculator.estimate_hand_value(hand, draw, melds = melds, \
                                                     dora_indicators = dora_indicators, config = config)
             if result.yaku:
