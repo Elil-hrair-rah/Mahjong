@@ -44,12 +44,28 @@ await bob.ckan()
 #generates an image of a player's hand with melds and rotated tiles in appropriate locations
 #can display opponents' hands with melds visible, as well as distinguishes between tedashi and tsumogiri
 #if the hand doesn't have any melds, it just redirects to the makeImage function
+
+#there's a weird bug here with a part (the rotated part?) of a particular meld
+#disappearing from the image sometimes, but only a display issue, not sure where
+#it is or how to fix it atm
+
 def player_image(player, hidden, tsumogiri, *args):
 #    if not isinstance(player, Player):
 #        return False
     
+    #if there are melds, do some specific stuff to display the meld accordingly
+    #this includes rotating the tile and placing the rotated tile based on who
+    #the tile was called from
+    
     if player.melds.melds:
         image_list = []
+        
+        #if the hand is another players', hide the hand by displaying a tileback image
+        #distinguish a tsumogiri discard from a tedashi discard by creating a
+        #randomly placed break in the undisplayed hand
+        #to do this, split up the hand into two chunks, each of which is a series of
+        #tileback images
+        
         if hidden:
             if tsumogiri:
                 parts = ['x' * len(player.hand) + 'z']
@@ -59,8 +75,24 @@ def player_image(player, hidden, tsumogiri, *args):
                 parts.append('x' * (len(player.hand) - location) + 'z')
         else:
             parts = [str(player.hand)]
+            
+        #this creates an array that corresponds with the individual tiles
+        #and determines whether or not to display the tile rotated
+        #0 indicates upright, while 1 indicates rotated
+        #2 is used to indicate an added kan, which is rotated but placed above
+        #a previously rotated tile
+        #if there is a 2 without a corresponding 1 in this array, it'll probably
+        #bug out and have the tiles clip into one another
+            
         rotated = []
+        
+        #the tiles in hand are obviously not rotated
+        
         rotated.append([0 for tile in player.hand.tiles])
+        
+        #and neither are the arguments (which are basically just the discard,
+        #but this is flexible enough to allow for other displays)
+        
         for arg in args:
             if isinstance(arg, Tiles):
                 rotated.append([0 for tile in arg.tiles])
@@ -73,6 +105,9 @@ def player_image(player, hidden, tsumogiri, *args):
                 tiles = Tiles()
                 tiles.add_tiles(arg)
                 rotated.append([0 for tile in tiles.tiles])
+                
+        #figure out who the tile was called from, for all open melds
+                
         for meld in player.melds.melds:
             rotation = {'L': [1, 0, 0], 'M': [0, 1, 0], 'R': [0, 0, 1]}
             if meld.who:
@@ -99,6 +134,11 @@ def player_image(player, hidden, tsumogiri, *args):
                         string += meld.shominkan_tile.value
                 string += meld.called.suit
                     
+            #if its a closed kan, then display the tiles without rotation
+            #but with flipping
+            #the logic exists to display the red 5 in the kan at all times if applicable
+            #but realistically this doesn't need to be present
+                
             else:
                 rotate = [0 for tile in meld.tiles]
                 string = str(meld)
@@ -112,6 +152,11 @@ def player_image(player, hidden, tsumogiri, *args):
                     
             rotated.append(rotate)
             parts.append(string)
+        
+        #converts the tile string (11123456789999m) into a list of image links
+        #to be pasted together into one long image
+        #any breaks (tedashi discarding hands, the discard, and meld blocks)
+        #are separated by a short upright transparent rectangle image
         
         image_list = []
         for part in parts:
@@ -141,6 +186,11 @@ def player_image(player, hidden, tsumogiri, *args):
         image_length = refs.count(0) * dim_x + refs.count(1) * dim_y
         if refs.count(2): image_height = 2 * dim_x
         else: image_height = dim_y
+        
+        #create a new image, based on how many images need to be displayed
+        #the image generated will always be longer than the space required, due
+        #to the transparent separator image being thinner than a normal tile
+        #but this issue doesn't seem like a big deal
         
         target = Image.new('RGBA', (image_length, image_height))
         left = 0

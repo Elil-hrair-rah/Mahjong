@@ -46,7 +46,6 @@ class Player:
     
     def draw_tile(self, wall):
         draw = wall.draw_tile(self)
-        #image = makeImage(' '.join([str(self.hand), str(draw)]))
         self.hand.add_tiles(draw)
         
 
@@ -86,15 +85,19 @@ class Player:
         
         return discard, hand_picture
         
-    async def show_hand(self, dm = None):
+    async def show_hand(self, dm = None, message = None):
         
         if dm is None:
             dm = self.disc.dm_channel
         hand_picture = player_image(self, False, False)
-        hand = discord.File(hand_picture, filename = "hand.png")
+        hand = discord.File(hand_picture, filename = str(self.disc) + "'s hand.png")
         if not dm:
             dm = await self.disc.create_dm()
-        await dm.send(str(self.disc) + "'s hand", file = hand)
+        if message is None:
+            await dm.send(str(self.disc) + "'s hand", file = hand)
+        else:
+            await dm.send(message, file = hand)
+        
     
 
     async def draw_discard(self, game):
@@ -105,7 +108,7 @@ class Player:
         dm = self.disc.dm_channel
         hand_picture = player_image(self, False, False, draw)
         hand_picture.seek(0)
-        hand = discord.File(hand_picture, filename = "hand.png")
+        hand = discord.File(hand_picture, filename = "your hand.png")
         if not dm:
             dm = await self.disc.create_dm()
         await dm.send('your hand', file = hand)

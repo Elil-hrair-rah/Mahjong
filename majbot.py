@@ -96,8 +96,6 @@ class Game:
         
         self.dora = Dora()
         self.ura_dora = Dora()
-        self.wall.dora(self.dora)
-        self.wall.dora(self.ura_dora)
         
         self.tenhou = True
         
@@ -109,9 +107,17 @@ class Game:
         #que
         #self.dora_tiles = Tiles()
                     
-    def add_dora(self):
+    async def add_dora(self):
         self.wall.dora(self.dora)
         self.wall.dora(self.ura_dora)
+        for player in self.players:            
+            dora_img = makeYamaImage(str(self.dora))
+            dora_img.seek(0)
+            dora = discord.File(dora_img, filename = "dora.png")
+            dm = player.disc.dm_channel
+            if not dm:
+                dm = await player.disc.create_dm()
+            await dm.send("Dora indicator:", file = dora)
         return
     
     def turn_progress(self):
@@ -124,8 +130,18 @@ class Game:
         
         
     async def start(self):
+        
+        await self.add_dora()
+        
+        for player in self.players:
+            if player is not self.active_player:
+                await player.show_hand()
+                print(player)
+            
+            
+            
         while self.wall.remaining > 0:
-            try:
+            try:                
                 discard, hidden_hand = await self.active_player.draw_discard(self)
                 
                 other_players = [player for player in self.players if player is not self.active_player]
@@ -135,7 +151,7 @@ class Game:
                     if not dm:
                         dm = await player.disc.create_dm()
                     hidden_hand.seek(0)
-                    hidden = discord.File(hidden_hand, filename = "hand.png")
+                    hidden = discord.File(hidden_hand, filename = str(player.disc) + "'s hand.png")
                     
                     await dm.send(self.active_player.disc, file = hidden)
                     if self.active_player.in_riichi:
@@ -182,11 +198,9 @@ class Game:
                     dm = player.disc.dm_channel
                     if not dm:
                         dm = await player.disc.create_dm()
-                    await dm.send(win_string)
-                    await dm.send(details)
-                    await dm.send(scores)
+                    final_string = win_string + '\n\n' + details + '\n\n' + scores
                     for winner in result.winner_result_dict.keys():
-                        await winner.show_hand(dm)
+                        await winner.show_hand(dm = dm, message = final_string)
                     active_users.pop(player.disc)
                 active_games.remove(self)
                 self.wall.remaining = -1
@@ -198,8 +212,8 @@ class Game:
             draw_string = 'Draw\n'
             
             if 0 < len(tenpai_players) < 4:
-                payment = 3000 / len(noten_players)
-                payout = 3000 / len(tenpai_players)
+                payment = 3000 // len(noten_players)
+                payout = 3000 // len(tenpai_players)
                 
                 draw_string += 'The following players were in tenpai:\n'
                 
@@ -221,13 +235,15 @@ class Game:
                 
             #may also need to compact this due to discord's ratelimits
             for player in self.players:
+                
+                final_string = draw_string + '\n\n' + scores
+                
                 dm = player.disc.dm_channel
                 if not dm:
                     dm = await player.disc.create_dm()
-                await dm.send(draw_string)
+                await dm.send(final_string)
                 for player in tenpai_players:
-                    await player.show_hand(dm)
-                await dm.send(scores)
+                    await player.show_hand(dm = dm)
                 
                     
 
