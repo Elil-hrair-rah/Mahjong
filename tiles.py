@@ -219,3 +219,32 @@ class Discards(Tiles):
     
     def __init__(self):
         Tiles.__init__(self)
+        self.current_index = -1
+        self.riichi_index = None
+        
+    #counts the number of tiles added for display purposes
+    def add_tiles(self, tiles):
+        
+        if isinstance(tiles,str):
+            suits = re.findall('[mpsz]', tiles)
+            values = re.split('[mpsz]', tiles)
+            for index, suit in enumerate(suits):
+                for value in values[index]:
+                    self.tiles.append(Tile(value, suit))
+                    self.current_index += 1
+        elif issubclass(type(tiles),Tile) or issubclass(type(tiles),Tiles):
+            self.add_tiles(str(tiles))
+        elif isinstance(tiles,list):
+            for tile in tiles:
+                self.add_tiles(str(tile))
+        
+    def declare_riichi(self, tile):
+        self.add_tiles(tile)
+        self.riichi_index = self.current_index
+        
+    #needs to notably not be sorted
+    def __str__(self):
+        string = ''
+        for tile in self.tiles:
+            string += str(tile)
+        return string

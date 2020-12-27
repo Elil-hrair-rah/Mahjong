@@ -2,6 +2,7 @@ import io
 import re
 from functools import reduce
 
+import math
 import random
 from PIL import Image
 
@@ -48,6 +49,8 @@ await bob.ckan()
 #there's a weird bug here with a part (the rotated part?) of a particular meld
 #disappearing from the image sometimes, but only a display issue, not sure where
 #it is or how to fix it atm
+#might be related to the fact that white dragons are noted as "5z" and there's some 
+#special code for red 5s in here, but not sure
 
 def player_image(player, hidden, tsumogiri, *args):
 #    if not isinstance(player, Player):
@@ -272,6 +275,57 @@ def makeImage(text, hidden = False, tsumogiri = False, *args):
     target.save(image, format = 'PNG')
     image.seek(0)
     return image
+
+def discard_image(player):
+#    if not isinstance(player, Player):
+#        return False
+    
+    #using the discard framework for defining where riichi tiles are, display
+    #the discards in rows of 6
+    
+    #will extend to 4 rows if it goes that far, as opposed to majsoul which will
+    #extend the third row as appropriate
+    
+    text = str(player.discards)
+    print(text)
+    num_tiles = len(player.discards)
+    if player.discards.riichi_index is not None:
+        dim_x = 5 * 80 + 130
+    else:
+        dim_x = 6 * 80
+    dim_y = math.ceil(num_tiles/6) * 130
+    
+    image_list = []
+    results = re.findall(r'([0-9x]+[mpsz])', text)
+    for result in results:
+        image_list += [
+            './ui/{}{}.png'.format(x, result[-1]) for x in result[:-1]
+        ]
+    print(image_list)
+    imagefile = [Image.open(x) for x in image_list]
+    
+    target = Image.new('RGBA', (dim_x, dim_y))
+    left = 0
+    down = 0
+    for index, img in enumerate(imagefile):
+        if index == player.discards.riichi_index:
+            img = img.rotate(90, expand = True)
+            target.paste(img, (left, down + 50))
+            left += img.size[0]
+        else:
+            target.paste(img, (left, down))
+            left += img.size[0]
+        if index % 6 == 5:
+            left = 0
+            down += 130
+    #target.save('{}.png'.format(text if text else 'Yama'), quality=100)
+
+    image = io.BytesIO()
+    target.save(image, format = 'PNG')
+    image.seek(0)
+    print()
+    return image
+
 
 #largely untouched from the majsoul generator app
 #https://github.com/watterle/majsoul-generator
