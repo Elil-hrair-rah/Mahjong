@@ -27,7 +27,7 @@ discordclient = commands.Bot(command_prefix = 'm!', intents = intents)
 
 load_dotenv()
 
-#will implement full hanchans at some point
+#TODO: implement full hanchans at some point
 class Match:
     
     def __init__(self, players, match_id, aka = 3):
@@ -48,10 +48,49 @@ class Match:
         players.append(self.player_order[0])
         self.player_order = players
     
-    def begin_game(self):
+    async def begin_game(self):
+        game_cont = 1
         
-        game = Game(self.player_order, self.match_id, self.aka)
-        await game.start()
+        while game_cont == True:
+            game = Game(self.player_order, self.match_id, self.aka)
+            active_games.append(game)
+            await game.start()
+            
+            
+            #end game if west 4
+            if self.round_number == 4 and self.round_wind == WEST:
+                game_cont = False
+            
+            #end game if south 4 and someone has more than 30000 points
+            if self.round_number == 4 and self.round_wind == SOUTH:
+                for player in self.players:
+                    if player.points >= 30000:
+                        game_cont = False
+            
+            #repeat if dealer was tenpai or won, unless dealer is tenpai and
+            #has the most points and one of the above conditions is fulfilled
+            #TODO
+            if game.winner is not None and game.east in game.winner:
+                tot_points = [player.points for player in self.players]
+                if game.east.points != max(tot_points):
+                    game_cont = True
+            else:
+                self.round_progression()
+                
+            #end game if bust
+            for player in self.players:
+                if player.points < 0:
+                    game_cont = False
+        
+        points_string = ''
+        for player in self.players:
+            points_string += str(player.disc) + ': ' + str(player.points)
+        for player in self.players:
+            dm = player.disc.dm_channel
+            if not dm:
+                dm = await player.disc.create_dm()
+            await dm.send(points_string)
+            
 
 class Game:
     
@@ -104,6 +143,8 @@ class Game:
         self.riichi = 0
         
         self.num_kan = 0
+        
+        self.winner = None
         
         #que
         #self.dora_tiles = Tiles()
@@ -232,6 +273,21 @@ class Game:
                 global active_users
                 global active_games            
                 
+                is_riichi = False
+                for player in result.winner_result_dict.keys():
+                    if player.in_riichi:
+                        is_riichi = True
+                
+                if is_riichi:
+                    for player in self.players:
+                        dora_img = makeYamaImage(str(self.ura_dora))
+                        dora_img.seek(0)
+                        dora = discord.File(dora_img, filename = "uradora.png")
+                        dm = player.disc.dm_channel
+                        if not dm:
+                            dm = await player.disc.create_dm()
+                        await dm.send("Uradora indicator:", file = dora)
+                
                 #might need to compact this part due to discord's ratelimits
                 for player in self.players:
                     dm = player.disc.dm_channel
@@ -243,6 +299,9 @@ class Game:
                     active_users.pop(player.disc)
                 active_games.remove(self)
                 self.wall.remaining = -1
+                
+                self.winner = result.winner_result_dict.keys()
+                
         if self.wall.remaining == 0:
             #TODO: add nagashi
             tenpai_players = [player for player in self.players if winning_tiles(player.hand)]
@@ -283,8 +342,8 @@ class Game:
                 await dm.send(final_string)
                 for player in tenpai_players:
                     await player.show_hand(dm = dm)
-                
-                    
+                            
+            self.winner = []                    
 
     #processes player discards
     #gives priority to ron
@@ -622,9 +681,12 @@ async def on_raw_reaction_add(reaction):
                         ids.remove(user)
                     except ValueError:
                         pass
-            game = Game(players, message_id)
-            active_games.append(game)
-            await game.start()
+#            game = Game(players, message_id)
+#            active_games.append(game)
+#            await game.start()
+            match = Match(players, message_id)
+#            active_games.append(match)
+            await match.begin_game()
         
 @discordclient.event
 async def on_raw_reaction_remove(reaction):

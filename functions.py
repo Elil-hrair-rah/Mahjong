@@ -43,8 +43,8 @@ def ukeire(tiles):
 #see the mahjong library for details regarding the returned object
 def hand_calculator(tiles, win_tile, config = HandConfig()):
     calculator = HandCalculator()
-    tiles = TilesConverter.one_line_string_to_136_array(str(tiles))
-    win_tile = TilesConverter.one_line_string_to_136_array(str(win_tile))[0]
+    tiles = TilesConverter.one_line_string_to_136_array(str(tiles), has_aka_dora = True)
+    win_tile = TilesConverter.one_line_string_to_136_array(str(win_tile), has_aka_dora = True)[0]
     return calculator.estimate_hand_value(tiles, win_tile, config = config)
 
 #computes the shanten of a given (14 - 3n) tile hand
@@ -52,6 +52,6 @@ def hand_calculator(tiles, win_tile, config = HandConfig()):
 #-1 is a winning hand, 0 is tenpai, 1 is iishanten, etc
 def shanten_calculator(tiles):
     shanten = Shanten()
-    tiles = TilesConverter.one_line_string_to_34_array(str(tiles))
+    tiles = TilesConverter.one_line_string_to_34_array(str(tiles), has_aka_dora = True)
     result = shanten.calculate_shanten(tiles)
     return result
