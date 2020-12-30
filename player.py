@@ -523,7 +523,7 @@ class Player:
             
             result = calculator.estimate_hand_value(hand, discard, melds = melds, \
                                                     dora_indicators = dora_indicators, config = config)
-            if result.yaku:
+            if result.yaku and result.cost and not a.error:
                 return result
             else:
                 return False
@@ -598,7 +598,7 @@ class Player:
             draw = TilesConverter.one_line_string_to_136_array(str(draw), has_aka_dora = True)[0]
             result = calculator.estimate_hand_value(hand, draw, melds = melds, \
                                                     dora_indicators = dora_indicators, config = config)
-            if result.yaku:
+            if result.yaku and result.cost and not a.error:
                 return result
             else:
                 return False

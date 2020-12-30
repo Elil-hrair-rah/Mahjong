@@ -48,7 +48,7 @@ class Match:
     
     async def begin_game(self):
         game_cont = 1
-        
+        global active_users
         while game_cont == True:
             game = Game(self.player_order, self.match_id, self.aka, self.round_wind)
             active_games.append(game)
@@ -81,12 +81,14 @@ class Match:
         
         points_string = ''
         for player in self.players:
-            points_string += str(player.disc) + ': ' + str(player.points)
+            points_string += str(player.disc) + ': ' + str(player.points) + '\n'
         for player in self.players:
             dm = player.disc.dm_channel
             if not dm:
                 dm = await player.disc.create_dm()
             await dm.send(points_string)
+            if player.disc in active_users:
+                active_users.pop(player.disc)
             
 
 class Game:
@@ -203,7 +205,8 @@ class Game:
             except GameOver as result:
                 win_string = ''
                 for winner, score in result.winner_result_dict.items():
-                    
+                    print("winner", winner)
+                    print('score', score)
                     #TODO: check and implement headbump for riichi sticks and honba
                     
                     #ron
@@ -213,7 +216,7 @@ class Game:
                     
                     #TODO: riichi sticks not working?
                     
-                    if score.cost['additional'] == 0:
+                    if score.cost['additional'] is None or score.cost['additional'] == 0:
                         #calculate headbump player, if applicable
                         #this might not actually be necessary, depending on how
                         #players get added to the game over result, but just in case
@@ -264,7 +267,6 @@ class Game:
                 for player in self.players:
                     scores += str(player.disc) + ': ' + str(player.points) + '\n'
                     
-                global active_users
                 global active_games            
                 
                 is_riichi = False
@@ -290,8 +292,6 @@ class Game:
                     final_string = win_string + '\n\n' + details + '\n\n' + scores
                     for winner in result.winner_result_dict.keys():
                         await winner.show_hand(dm = dm, message = final_string)
-                    if player.disc in active_users:
-                        active_users.pop(player.disc)
                 active_games.remove(self)
                 self.wall.remaining = -1
                 
@@ -668,7 +668,7 @@ async def leave_game(ctx):
     """Leave the current game.
     Leave the game you are in. You will be replaced with a tsumogiri bot.
     """
-    
+    global active_users
     if ctx.author in active_users:
         game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
         match = [match for match in active_matches if match.match_id == active_users[ctx.author]][0]
@@ -692,7 +692,9 @@ async def leave_game(ctx):
             replacement.seat = NORTH
         
         match.player_order = [TsumoBot(ctx.author.id, ctx.author, discordclient) if player.disc == ctx.author else player for player in match.player_order]
-
+        
+        if ctx.author in active_users:
+            active_users.pop(ctx.author)
         await ctx.send('Game abandoned successfully')
     else:
         await ctx.send('You are not in a game')
