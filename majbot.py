@@ -618,13 +618,10 @@ async def invite(ctx):
     await ctx.send('https://discord.com/oauth2/authorize?client_id=769708017993121822&permissions=387136&scope=bot')
     
 @discordclient.command()
-async def changelog(ctx):
-    ''' A list of changes since the last update.
-    Current version: 1.0.2
+async def github(ctx):
+    ''' My github.
     '''
-    await ctx.send('Added 30 minute window to start a game.\
-                    Added the option to leave a game, and have a tsumogiri bot replace you.\
-                    Added the option to play a solo game against 3 tsumogiri bots.')
+    await ctx.send('https://github.com/Elil-hrair-rah/Mahjong')
 
 @discordclient.command()
 async def official_server(ctx):
@@ -694,6 +691,15 @@ async def leave_game(ctx):
         await ctx.send('Game abandoned successfully')
     else:
         await ctx.send('You are not in a game')
-
+    
+@discordclient.command()
+async def changelog(ctx):
+    ''' A list of changes since the last update.
+    Current version: 1.0.2
+    '''
+    await ctx.send('Added 30 minute window to start a game.\
+                    Added the option to leave a game, and have a tsumogiri bot replace you.\
+                    Added the option to play a solo game against 3 tsumogiri bots.')
+                    
 token = os.getenv("DISCORD_TOKEN")
 discordclient.run(token)
