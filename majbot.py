@@ -174,9 +174,8 @@ class Game:
         
         for player in self.players:
             if player is not self.active_player:
-                await player.show_hand()
-            
-            
+                seat = {EAST: "East", SOUTH: "South", WEST: "West", NORTH: "North"}
+                await player.show_hand(message = ("You are " + seat[player.seat]))
             
         while self.wall.remaining > 0:
             try:                
@@ -291,7 +290,8 @@ class Game:
                     final_string = win_string + '\n\n' + details + '\n\n' + scores
                     for winner in result.winner_result_dict.keys():
                         await winner.show_hand(dm = dm, message = final_string)
-                    active_users.pop(player.disc)
+                    if player.disc in active_users:
+                        active_users.pop(player.disc)
                 active_games.remove(self)
                 self.wall.remaining = -1
                 
