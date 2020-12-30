@@ -276,7 +276,7 @@ def makeImage(text, hidden = False, tsumogiri = False, *args):
     image.seek(0)
     return image
 
-def discard_image(player):
+def discard_image(player, tile):
 #    if not isinstance(player, Player):
 #        return False
     
@@ -286,9 +286,12 @@ def discard_image(player):
     #will extend to 4 rows if it goes that far, as opposed to majsoul which will
     #extend the third row as appropriate
     
-    text = str(player.discards)
-    print(text)
-    num_tiles = len(player.discards)
+    text = str(player.discards) + str(tile)
+    num_tiles = len(player.discards) + 1
+    
+    #can probably do a check to see if this extension is necessary, but its not
+    #really a big deal
+    
     if player.discards.riichi_index is not None:
         dim_x = 5 * 80 + 130
     else:
@@ -301,7 +304,6 @@ def discard_image(player):
         image_list += [
             './ui/{}{}.png'.format(x, result[-1]) for x in result[:-1]
         ]
-    print(image_list)
     imagefile = [Image.open(x) for x in image_list]
     
     target = Image.new('RGBA', (dim_x, dim_y))
@@ -323,7 +325,6 @@ def discard_image(player):
     image = io.BytesIO()
     target.save(image, format = 'PNG')
     image.seek(0)
-    print()
     return image
 
 

@@ -10,7 +10,7 @@ from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
 from player import Player
 from tiles import Tile, Wall, Dora, Hand, Melds, Discards
-from graphics import player_image, makeImage, makeYamaImage
+from graphics import player_image, makeImage, makeYamaImage, discard_image
 from functions import winning_tiles, ukeire, shanten_calculator
 from errorhandling import GameOver, EndGame
 
@@ -51,6 +51,7 @@ class Match:
     def begin_game(self):
         
         game = Game(self.player_order, self.match_id, self.aka)
+        await game.start()
 
 class Game:
     
@@ -136,7 +137,6 @@ class Game:
         for player in self.players:
             if player is not self.active_player:
                 await player.show_hand()
-                print(player)
             
             
             
@@ -151,11 +151,15 @@ class Game:
                     if not dm:
                         dm = await player.disc.create_dm()
                     hidden_hand.seek(0)
-                    hidden = discord.File(hidden_hand, filename = str(player.disc) + "'s hand.png")
+                    hidden = discord.File(hidden_hand, filename = str(self.active_player.disc) + "'s hand.png")
                     
-                    await dm.send(self.active_player.disc, file = hidden)
+                    await dm.send(str(self.active_player.disc) + "'s hand", file = hidden)
                     if self.active_player.in_riichi:
                         await dm.send(str(self.active_player.disc) + ' is in riichi!')
+                        
+                    discard_pile = discard_image(self.active_player, discard)
+                    discard_img = discord.File(discard_pile, filename = str(self.active_player.disc) + "'s discards.png")
+                    await dm.send(str(self.active_player.disc) + "'s discards", file = discard_img)
                     
                 await self.process_discard(discard)     
                 self.turn_progress()
@@ -163,26 +167,61 @@ class Game:
                 win_string = ''
                 for winner, score in result.winner_result_dict.items():
                     
+                    #TODO: check and implement headbump for riichi sticks and honba
+                    
                     #ron
+                    
+                    #should now return riichi sticks to players and take honba
+                    #into consideration, not that honba works yet
+                    
+                    #TODO: riichi sticks not working?
+                    
                     if score.cost['additional'] == 0:
-                        self.active_player.points -= score.cost['main']
-                        winner.points += score.cost['main']
+                        bump = 0
+                        #calculate headbump player, if applicable
+                        #this might not actually be necessary, depending on how
+                        #players get added to the game over result, but just in case
+                        if len(result.winner_result_dict) > 1:
+                            rotation = [self.east, self.south, self.west, self.north]
+                            distances = [(rotation.index(player) - rotation.index(self.active_player) % 4)\
+                                         for player in result.winner_result_dict.keys()]
+                            my_distance = (rotation.index(winner) - rotation.index(self.active_player)) % 4
+                            
+                            if my_distance == min(distances):
+                                bump = self.honba * 300 + self.riichi * 1000
+                                self.honba = 0
+                                self.riichi = 0
+                        else:
+                            honba = self.honba * 300
+                            riichi = self.riichi * 1000
+                            self.honba = 0
+                            self.riichi = 0
+                                
+                        
+                        self.active_player.points -= (score.cost['main'] + honba)
+                        winner.points += (score.cost['main'] + honba + riichi)
                         win_string += str(winner.disc) + ' has won by ron off ' + str(self.active_player.disc) +\
                                           ' and won ' + str(score.cost['main']) + ' points.\n'
                     #tsumo
+                                          
+                    #should now return riichi sticks to players and take honba
+                    #into consideration, not that honba works yet
                     else:
                         other_players = [player for player in self.players if player is not self.active_player]
                         score_change = 0
                         for player in other_players:
                             if player.seat == EAST:
-                                player.points -= score.cost['main']
-                                winner.points += score.cost['main']
-                                score_change += score.cost['main']
+                                player.points -= (score.cost['main'] + self.honba * 100)
+                                winner.points += (score.cost['main'] + self.honba * 100)
+                                score_change += (score.cost['main'] + self.honba * 100)
                             else:
-                                player.points -= score.cost['additional']
-                                winner.points += score.cost['additional']
-                                score_change += score.cost['additional']
+                                player.points -= (score.cost['additional'] + self.honba * 100)
+                                winner.points += (score.cost['additional'] + self.honba * 100)
+                                score_change += (score.cost['additional'])
+                        player.points += self.riichi * 1000
                         win_string += str(winner.disc) + ' has won by tsumo and won ' + str(score_change) + ' points.\n'
+                        self.riichi = 0
+                        self.honba = 0
 
                 details = str(score) + '\nYaku:\n' + str(score.yaku) + '\nFu:\n' + str(score.fu_details)
                     
@@ -286,8 +325,8 @@ class Game:
                         called = await player.okan(discard, self)
                         if called:
                             self.active_player = player
-                            discard, hidden_hand = await self.active_player.draw_discard(self.wall)
-                            self.add_dora()
+                            new_discard, hidden_hand = await self.active_player.draw_discard(self.wall)
+                            await self.add_dora()
                         
                 pon = player.pon_tiles(discard)
                 if pon:
@@ -299,7 +338,7 @@ class Game:
                         called = await player.pon(discard, self)
                         if called:
                             self.active_player = player
-                            discard, hidden_hand = await self.active_player.discard_tile()
+                            new_discard, hidden_hand = await self.active_player.discard_tile()
         next_player = self.next_player()
         if not next_player.in_riichi:
             chii = next_player.chii_tiles(discard)
@@ -312,9 +351,8 @@ class Game:
                     called = await next_player.chii(discard, self)
                     if called:
                         self.active_player = next_player
-                        discard, hidden_hand = await self.active_player.discard_tile()
+                        new_discard, hidden_hand = await self.active_player.discard_tile()
         if called:
-            
             for player in self.players:
                 player.ippatsu = False
                 self.tenhou = False
@@ -327,8 +365,20 @@ class Game:
                 hidden_hand.seek(0)
                 hidden = discord.File(hidden_hand, filename = "hand.png")
                 await dm.send(self.active_player.disc, file = hidden)
-            await self.process_discard(discard)
-
+                
+                discard_pile = discard_image(self.active_player, new_discard)
+                discard_img = discord.File(discard_pile, filename = str(self.active_player.disc) + "'s discards.png")
+                await dm.send(str(self.active_player.disc) + "'s discards", file = discard_img)
+            await self.process_discard(new_discard)
+            
+        #adds discards to the discard pile, which can then be checked for furiten
+        #and referenced to display discard piles
+        else:
+            if self.active_player.discards.riichi_index is None and self.active_player.in_riichi:
+                self.active_player.discards.declare_riichi(discard)
+            else:
+                self.active_player.discards.add_tiles(discard)
+        self.active_player.total_discards.add_tiles(discard)
 
 
 
@@ -575,9 +625,6 @@ async def on_raw_reaction_add(reaction):
             game = Game(players, message_id)
             active_games.append(game)
             await game.start()
-            
-            await channel.send('game started')
-            #TODO: start game
         
 @discordclient.event
 async def on_raw_reaction_remove(reaction):

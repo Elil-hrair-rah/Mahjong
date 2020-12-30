@@ -76,10 +76,6 @@ class Player:
         self.temp_furiten = False
         
         self.hand.remove_tiles(discard)
-        self.total_discards.add_tiles(discard)
-        #TODO: implement a visible discard pile
-        #if tile is not stolen:
-        self.discards.add_tiles(discard)
         
         hand_picture = player_image(self, True, True, str(discard))
         
@@ -133,7 +129,7 @@ class Player:
             if choice == 'y' or choice == 'yes':
                 call = await self.ckan(draw)
                 if call:
-                    game.add_dora()
+                    await game.add_dora()
                     discard, hidden_picture = await self.draw_discard(game)
                     self.rinshan = False
                     return discard, hidden_picture
