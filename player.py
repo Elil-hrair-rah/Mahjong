@@ -615,3 +615,88 @@ class Player:
         response = await self.client.wait_for('message', check = check, timeout = timeout)
         return response.content
     
+class TsumoBot(Player):
+    
+    def __init__(self, disc_id, disc, client, match_id = 1, seat = None, luck = 0, points = 25000):
+        Player.__init__(self, disc_id, disc, client, match_id = 1, seat = None, luck = 0, points = 25000)
+        self.disc = AIDisc(disc)
+        
+    async def discard_tile(self):
+        discard = random.choice(self.hand.tiles)
+        
+        self.temp_furiten = False
+        
+        self.hand.remove_tiles(discard)
+        
+        hand_picture = player_image(self, True, True, str(discard))
+        
+        return discard, hand_picture
+    
+    async def draw_discard(self, game):
+        draw = game.wall.draw_tile(self)
+        self.total_discards.add_tiles(draw)
+
+        hidden_picture = player_image(self, True, True, str(draw))
+                
+        self.temp_furiten = False
+        
+        return draw, hidden_picture
+    
+    def chii_tiles(self, discard):
+        return False
+    
+    def pon_tiles(self, discard):
+        return False
+    
+    def okan_tiles(self, discard):
+        return False
+    
+    def ckan_tiles(self, draw):
+        return False
+    
+    async def chii(self, discard, game):
+        return False
+        
+    async def pon(self, discard, game):
+        return False
+        
+    def okan(self, discard, game):
+        return False
+        
+
+    async def ckan(self, draw):
+        return False
+    
+    async def riichi(self, draw, game):
+        return False
+
+    def ron(self, discard, game):
+        return False
+    
+    def tsumo(self, draw, game):
+        return False
+            
+    async def user_input(self, query, timeout = 25.0):
+        return False
+        
+class AIDisc:
+    
+    def __init__(self, num):
+        self.num = num
+        self.dm_channel = AIDMChannel()
+        
+    def __str__(self):
+        return "Bot " + str(self.num)
+    
+    def create_dm(self):
+        return self.dm_channel
+    
+class AIDMChannel:
+    
+    def __init__(self):
+        self.placeholder = 'lol'
+        
+    async def send(self, message, file = 'lol'):
+        pass
+
+    

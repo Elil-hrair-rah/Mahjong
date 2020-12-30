@@ -1,18 +1,17 @@
-import json
-
 import random
-import requests
+import time
+from aio_timers import Timer
 
 from mahjong.hand_calculating.hand import HandCalculator
 from mahjong.hand_calculating.hand_config import HandConfig
 
 from mahjong.constants import EAST, SOUTH, WEST, NORTH
 
-from player import Player
+from player import Player, TsumoBot
 from tiles import Tile, Wall, Dora, Hand, Melds, Discards
-from graphics import player_image, makeImage, makeYamaImage, discard_image
+from graphics import makeImage, makeYamaImage, discard_image
 from functions import winning_tiles, ukeire, shanten_calculator
-from errorhandling import GameOver, EndGame
+from errorhandling import GameOver
 
 import os
 from dotenv import load_dotenv
@@ -27,7 +26,6 @@ discordclient = commands.Bot(command_prefix = 'm!', intents = intents)
 
 load_dotenv()
 
-#TODO: implement full hanchans at some point
 class Match:
     
     def __init__(self, players, match_id, aka = 3):
@@ -52,7 +50,7 @@ class Match:
         game_cont = 1
         
         while game_cont == True:
-            game = Game(self.player_order, self.match_id, self.aka)
+            game = Game(self.player_order, self.match_id, self.aka, self.round_wind)
             active_games.append(game)
             await game.start()
             
@@ -69,7 +67,6 @@ class Match:
             
             #repeat if dealer was tenpai or won, unless dealer is tenpai and
             #has the most points and one of the above conditions is fulfilled
-            #TODO
             if game.winner is not None and game.east in game.winner:
                 tot_points = [player.points for player in self.players]
                 if game.east.points != max(tot_points):
@@ -94,12 +91,12 @@ class Match:
 
 class Game:
     
-    def __init__(self, players, match_id, aka = 3):
+    def __init__(self, players, match_id, aka = 3, wind = EAST):
         self.players = players
         self.match_id = match_id
         
         #temporary
-        self.round_wind = EAST
+        self.round_wind = wind
         
         self.wall = Wall(aka)
         
@@ -218,7 +215,6 @@ class Game:
                     #TODO: riichi sticks not working?
                     
                     if score.cost['additional'] == 0:
-                        bump = 0
                         #calculate headbump player, if applicable
                         #this might not actually be necessary, depending on how
                         #players get added to the game over result, but just in case
@@ -229,7 +225,6 @@ class Game:
                             my_distance = (rotation.index(winner) - rotation.index(self.active_player)) % 4
                             
                             if my_distance == min(distances):
-                                bump = self.honba * 300 + self.riichi * 1000
                                 self.honba = 0
                                 self.riichi = 0
                         else:
@@ -449,9 +444,11 @@ whitelist = os.getenv("WHITELIST").split(' ')
 whitelist = [int(disc_id) for disc_id in whitelist]
 
 pending_games = dict()
+pending_bot_games = dict()
 active_users = dict()
 pending_users = []
 active_games = []
+active_bot_games = []
 active_matches = []
 
 
@@ -464,45 +461,6 @@ async def user_input(query, player):
         return msg.channel == dm
     response = await discordclient.wait_for('message', check = check, timeout = 25.0)
     return response
-    
-@discordclient.command()
-async def input_test(ctx, args):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        player = Player('bob', ctx.author, discordclient)
-        response = await user_input(args, player)
-        print(response.content)
-    else:
-        await ctx.send("Administrator command")
-
-@discordclient.command()
-async def player_input(ctx, args):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        player = Player('bob', ctx.author, discordclient)
-        response = await player.user_input(args, discordclient)
-        print(response.content)
-    else:
-        await ctx.send("Administrator command")
-    
-@discordclient.command()
-async def graphics_test(ctx):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        player = Player('bob', ctx.author, discordclient)
-        otherplayer = Player('notbob', 1, discordclient)
-        game = Game([player, otherplayer, otherplayer, otherplayer])
-        hand_picture = player_image(player, False, True)
-        hand = discord.File(hand_picture, filename = "hand.png")
-        await ctx.send('hand', file = hand)
-    else:
-        await ctx.send("Administrator command")
         
 @discordclient.command()
 async def print_hand(ctx, arg):
@@ -512,26 +470,13 @@ async def print_hand(ctx, arg):
         await ctx.send('hand', file = hand)
     else:
         await ctx.send("Administrator command")
-    
-@discordclient.command()
-async def create_player(ctx):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    global active_users;
-    if ctx.author.id in whitelist and ctx.author not in active_users:
-        global active_games
-        player = Player(ctx.author.id, ctx.author, discordclient, ctx.message.id)
-        otherplayer = Player(0, discordclient.user, discordclient, ctx.message.id)
-        game = Game([player, otherplayer, otherplayer, otherplayer], ctx.message.id)
-        active_games.append(game)
-        active_users[ctx.author] = ctx.message.id
-        await ctx.send('Player object created')
-    else:
-        await ctx.send("Administrator command")
+
     
 @discordclient.command()
 async def player_hand(ctx):
+    """ Display hand
+    Displays the tiles in a players hand in DM
+    """
     if ctx.author in active_users:
         game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
         player = [player for player in game.players if player.disc == ctx.author]
@@ -542,6 +487,9 @@ async def player_hand(ctx):
         
 @discordclient.command()
 async def game_dora(ctx):
+    """ Display dora
+    Displays the dora tiles in an active game in DM
+    """
     if ctx.author in active_users:
         game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
         dora_image = makeYamaImage(str(game.dora))
@@ -552,95 +500,7 @@ async def game_dora(ctx):
         await dm.send("Dora", file = dora)
     else:
         await ctx.send('You are not in a game')
-    
-@discordclient.command()
-async def player_dd(ctx):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        if ctx.author in active_users:
-            game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
-            player = [player for player in game.players if player.disc == ctx.author]
-            await player[0].draw_discard(game.wall)
-            await ctx.send('Draw and Discard')
-        else:
-            await ctx.send('You are not in a game')
-    else:
-        await ctx.send("Administrator command")
-    
-@discordclient.command()
-async def chii_test(ctx):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        player = Player('bob', ctx.author, discordclient, ctx.message.id)
-        otherplayer = Player('notbob', 1, discordclient, ctx.message.id)
-        game = Game([player, otherplayer, otherplayer, otherplayer], ctx.message.id)
-        player.hand.add_tiles('1234506m')
-        active_games.append(game)
-        active_users[ctx.author] = ctx.message.id
-        await player.chii(Tile('4','m'), game)
-        await ctx.send(str(player))
-    else:
-        await ctx.send("Administrator command")
-        
-@discordclient.command()
-async def pon_test(ctx):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        player = Player('bob', ctx.author, discordclient)
-        otherplayer = Player('notbob', 1, discordclient)
-        game = Game([player, otherplayer, otherplayer, otherplayer], 1)
-        player.hand.add_tiles('111550m')
-        active_games.append(game)
-        active_users[ctx.author] = ctx.message.id
-        await player.pon(Tile('1','m'), game)
-        await player.pon(Tile('5','m'), game)
-        await ctx.send(str(player))
-    else:
-        await ctx.send("Administrator command")
 
-@discordclient.command()
-async def kan_test(ctx):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        player = Player('bob', ctx.author, discordclient)
-        otherplayer = Player('notbob', 1, discordclient)
-        game = Game([player, otherplayer, otherplayer, otherplayer], 1)
-        player.hand.add_tiles('111550m9999m')
-        player.okan(Tile('1','m'), game)
-        active_games.append(game)
-        active_users[ctx.author] = ctx.message.id
-        await player.pon(Tile('5','m'), game)
-        await player.ckan()
-        await player.ckan()
-        await ctx.send(str(player))
-    else:
-        await ctx.send("Administrator command")
-        
-@discordclient.command()
-async def riichi_test(ctx):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        player = Player(ctx.author.id, ctx.author, discordclient)
-        otherplayer = Player('notbob', 1, discordclient)
-        game = Game([otherplayer, otherplayer, otherplayer, otherplayer], 1)
-        player.hand.add_tiles('1112345678999m')
-        discard = await player.riichi(Tile('2','p'), game)
-        await ctx.send(str(player) + str(Tile('2','p')))
-        await ctx.send(str(discard))
-        await ctx.send(player.points)
-        await ctx.send(player.in_riichi)
-    else:
-        await ctx.send("Administrator command")
 
 @discordclient.event
 async def on_ready():
@@ -662,11 +522,21 @@ async def on_message(message):
 @discordclient.event
 async def on_raw_reaction_add(reaction):
     global pending_games
+    global pending_bot_games
     global active_users
+    
+    
     user = reaction.member
     message_id = reaction.message_id
+    
     channel = discordclient.get_channel(reaction.channel_id)
-    if message_id in pending_games and str(reaction.emoji) == '✅':
+    message = await channel.fetch_message(message_id)
+    active = False
+    for reaction in message.reactions:
+        if reaction.me:
+            active = True
+    
+    if message_id in pending_games and str(reaction.emoji) == '✅' and active:
         if user not in active_users and user.id != discordclient.user.id:
             pending_games[message_id].append(user)
         if len(pending_games[message_id]) == 4:
@@ -685,7 +555,20 @@ async def on_raw_reaction_add(reaction):
 #            active_games.append(game)
 #            await game.start()
             match = Match(players, message_id)
-#            active_games.append(match)
+            active_matches.append(match)
+            await match.begin_game()
+            
+    if message_id in pending_bot_games and str(reaction.emoji) == '✅' and active:
+        if user not in active_users and user.id != discordclient.user.id:
+            pending_bot_games[message_id].append(user)
+        if len(pending_bot_games[message_id]) == 1:
+            user = pending_bot_games[message_id][0]
+            del pending_bot_games[message_id]
+            players = []
+            players.append(Player(user.id, user, discordclient))
+            for _ in range(3):
+                players.append(TsumoBot(user.id, user, discordclient))
+            match = Match(players, message_id)
             await match.begin_game()
         
 @discordclient.event
@@ -696,102 +579,36 @@ async def on_raw_reaction_remove(reaction):
     if message_id in pending_games and str(reaction.emoji) == '✅':
         if user:
             pending_games[message_id].remove(user[0])
-            
-@discordclient.command()
-async def dm(ctx, *arg):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        if arg:
-            target = discordclient.get_user(int(arg[0]))
-            dm = target.dm_channel
-            if not dm:
-                await target.create_dm()
-            await dm.send('testing targeted dm functionality')
-        else:
-            await ctx.author.send('testing dm functionality')
-    else:
-        await ctx.send("Administrator command")
-
-@discordclient.command()
-async def pending_dm(ctx, key):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        for user in pending_games[int(key)]:
-            dm = user.dm_channel
-            if not dm:
-                dm = await user.create_dm()
-            await dm.send('testing targeted dm functionality')
-    else:
-        await ctx.send("Administrator command")
-
-@discordclient.command()
-async def pending_game(ctx):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        await ctx.send(pending_games)
-    else:
-        await ctx.send("Administrator command")
-
-@discordclient.command()
-async def active_user(ctx):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        await ctx.send(active_users)
-    else:
-        await ctx.send("Administrator command")
-
-@discordclient.command()
-async def active_game(ctx):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        await ctx.send(active_games)
-    else:
-        await ctx.send("Administrator command")
-
-@discordclient.command()
-async def pending_user(ctx):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    if ctx.author.id in whitelist:
-        await ctx.send(pending_users)
-    else:
-        await ctx.send("Administrator command")
-        
-@discordclient.command()
-async def add_pending_user(ctx, arg):
-    ''' admin command
-    this is a command used for testing functionality and either doesnt work or shouldnt be used
-    '''
-    global pending_users
-    if ctx.author.id in whitelist:
-        for user in active_users:
-            if int(arg) == user.id:
-                pending_users.append(user)
-    else:
-        await ctx.send("Administrator command")
+  
+async def remove_react(msg):
+    await msg.remove_reaction('✅', discordclient.user)
 
 @discordclient.command()
 async def game(ctx):
     ''' Start a game of mahjong
     '''
     if str(ctx.message.channel.type) == "private":
-        await ctx.send("This command does not work in DMs, as a game of mahjong requires 4 people to play. AI functionality does not yet exist.")
+        await ctx.send("This command does not work in DMs")
     else:
         global pending_games
         msg = await ctx.send("React to this message with ✅ to join the game. You cannot join a game while participating in another one.")
         pending_games[msg.id] = []
         await msg.add_reaction('✅')
+        timer = Timer(1800, remove_react, callback_args = (msg,))
+    
+@discordclient.command()    
+async def bot_game(ctx):
+    ''' Start a bot game of mahjong
+    '''
+    global pending_bot_games
+    
+    if str(ctx.message.channel.type) == "private":
+        await ctx.send("This command does not work in DMs")
+    else:
+        msg = await ctx.send("React to this message with ✅ to join the game. You cannot join a game while participating in another one.")
+        pending_bot_games[msg.id] = []
+        await msg.add_reaction('✅')
+        timer = Timer(1800, remove_react, callback_args = (msg,))
         
 @discordclient.command()
 async def invite(ctx):
@@ -799,6 +616,15 @@ async def invite(ctx):
     If the link doesn't work, it's probably because the bot is in 100 servers and I haven't verified it.
     '''
     await ctx.send('https://discord.com/oauth2/authorize?client_id=769708017993121822&permissions=387136&scope=bot')
+    
+@discordclient.command()
+async def changelog(ctx):
+    ''' A list of changes since the last update.
+    Current version: 1.0.2
+    '''
+    await ctx.send('Added 30 minute window to start a game.\
+                    Added the option to leave a game, and have a tsumogiri bot replace you.\
+                    Added the option to play a solo game against 3 tsumogiri bots.')
 
 @discordclient.command()
 async def official_server(ctx):
@@ -834,6 +660,40 @@ async def waits(ctx, arg):
     agaripai = [str(tile) for tile in agaripai]
     agaripai = ' '.join(agaripai)
     await ctx.send(agaripai)
+
+@discordclient.command()
+async def leave_game(ctx):
+    """Leave the current game.
+    Leave the game you are in. You will be replaced with a tsumogiri bot.
+    """
+    
+    if ctx.author in active_users:
+        game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
+        match = [match for match in active_matches if match.match_id == active_users[ctx.author]][0]
+        hand = [player for player in game.players if player.disc == ctx.author][0].hand
+        replacement = TsumoBot(ctx.author.id, ctx.author, discordclient)
+        replacement.hand.add_tiles(str(hand))
+        game.players = [replacement if player.disc == ctx.author else player for player in game.players]
+        
+        if game.east.disc == ctx.author:
+            game.east = replacement
+            replacement.seat = EAST
+            game.active_player = game.east
+        elif game.south.disc == ctx.author:
+            game.south = replacement
+            replacement.seat = SOUTH
+        elif game.west.disc == ctx.author:
+            game.west = replacement
+            replacement.seat = WEST
+        elif game.north.disc == ctx.author:
+            game.north = replacement
+            replacement.seat = NORTH
+        
+        match.player_order = [TsumoBot(ctx.author.id, ctx.author, discordclient) if player.disc == ctx.author else player for player in match.player_order]
+
+        await ctx.send('Game abandoned successfully')
+    else:
+        await ctx.send('You are not in a game')
 
 token = os.getenv("DISCORD_TOKEN")
 discordclient.run(token)
