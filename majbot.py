@@ -556,6 +556,7 @@ async def on_raw_reaction_add(reaction):
 #            await game.start()
             match = Match(players, message_id)
             active_matches.append(match)
+            await msg.add_reaction('❌')
             await match.begin_game()
             
     if message_id in pending_bot_games and str(reaction.emoji) == '✅' and active:
@@ -569,6 +570,7 @@ async def on_raw_reaction_add(reaction):
             for _ in range(3):
                 players.append(TsumoBot(user.id, user, discordclient))
             match = Match(players, message_id)
+            await msg.add_reaction('❌')
             await match.begin_game()
         
 @discordclient.event
@@ -582,6 +584,7 @@ async def on_raw_reaction_remove(reaction):
   
 async def remove_react(msg):
     await msg.remove_reaction('✅', discordclient.user)
+    await msg.add_reaction('❌')
 
 @discordclient.command()
 async def game(ctx):
