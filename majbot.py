@@ -667,6 +667,7 @@ async def waits(ctx, arg):
 async def leave_game(ctx):
     """Leave the current game.
     Leave the game you are in. You will be replaced with a tsumogiri bot.
+    Do not use this function while you are prompted to do something else.
     """
     global active_users
     if ctx.author in active_users:

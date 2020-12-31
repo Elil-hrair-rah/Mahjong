@@ -523,7 +523,7 @@ class Player:
             
             result = calculator.estimate_hand_value(hand, discard, melds = melds, \
                                                     dora_indicators = dora_indicators, config = config)
-            if result.yaku and result.cost and not a.error:
+            if result.yaku and result.cost and not result.error:
                 return result
             else:
                 return False
