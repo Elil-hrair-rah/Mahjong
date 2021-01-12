@@ -4,7 +4,7 @@ from mahjong.hand_calculating.hand_config import HandConfig
 from mahjong.shanten import Shanten
 
 
-from tiles import Tiles, OneOfEach
+from tiles import Tiles, OneOfEach, Wall
 
 #computes what tiles would complete a given (13 - 3n)-tile hand.
 #returns nothing (empty list) if hand is not in tenpai
@@ -36,6 +36,71 @@ def ukeire(tiles):
         temp = Tiles()
         temp.add_tiles(tiles)
         return ukeire(str(temp))
+    
+#brute force search for number of tiles that improve shanten count based on the
+#tiles in the pool given, or the entire wall if no pool provided
+def efficient_discard(tiles, pool = None):
+    base_shanten = shanten_calculator(tiles)
+    improvements = {}
+    if pool is None:
+        pool = Wall()
+        pool.remove_tiles(tiles)
+    for tile in tiles.tiles:
+        count = 0
+        temp = Tiles()
+        temp.tiles = tiles.tiles[:]
+        temp.remove_tiles(tile)
+        for sample in pool.tiles:
+            temp.add_tiles(sample)
+            shanten = shanten_calculator(temp)
+            if shanten < base_shanten:
+                count += 1
+            temp.remove_tiles(sample)
+        if count > 0:
+            improvements[str(tile)] = count
+    return improvements
+        
+'''
+def sidegrade(tiles, pool = None):
+    number_of_upgrades = {}
+    if pool is None:
+        pool = Wall()
+        pool.remove_tiles(tiles)
+    for tile in tiles.tiles:
+        temp = Tiles()
+        temp.tiles = tiles.tiles[:]
+        temp.remove_tiles(tile)
+        for sample in pool.tiles:
+            temp.add_tiles(sample)
+            if pool is None:
+                efficiency = efficient_discard(temp)
+            else:
+                efficiency = efficient_discard(temp,pool)
+            temp.remove_tiles(sample)
+        number_of_upgrades[str(tile)] = len(efficiency)
+        print(tile, efficiency)
+    return number_of_upgrades
+'''       
+
+def efficiency_discard(tiles, pool = None):
+    if isinstance(tiles,str):
+        tiles = tiles.replace(' ','')
+        temp = Tiles()
+        temp.add_tiles(tiles)
+        return winning_tiles(temp)
+    elif issubclass(type(tiles),Tiles):
+        if pool is None:
+            discards = efficient_discard(tiles)
+        else:
+            discards = efficient_discard(tiles, pool)
+        most_efficient = [tile for tile in discards.keys() if discards[tile] == max(discards.values())]
+        #return the entire list, and a choice can be made later
+        return most_efficient
+    elif isinstance(tiles,list):
+        temp = Tiles()
+        temp.add_tiles(tiles)
+        return winning_tiles(str(temp))
+    
 
 #computes a rough estimate of the value of a given hand
 #ignores conditional yaku such as riichi, ippatsu, haitei, etc
