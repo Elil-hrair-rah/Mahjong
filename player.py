@@ -11,7 +11,7 @@ import discord
 
 from graphics import player_image
 from tiles import Tile, Tiles, Hand, Meld, Melds, Discards
-from functions import shanten_calculator, winning_tiles 
+from functions import shanten_calculator, winning_tiles, efficient_discard
 from errorhandling import GameOver
 
 import asyncio
@@ -598,13 +598,25 @@ class Player:
             draw = TilesConverter.one_line_string_to_136_array(str(draw), has_aka_dora = True)[0]
             result = calculator.estimate_hand_value(hand, draw, melds = melds, \
                                                     dora_indicators = dora_indicators, config = config)
-            if result.yaku and result.cost and not a.error:
+            if result.yaku and result.cost and not result.error:
                 return result
             else:
                 return False
         else:
             return False
-            
+    
+    #generates a list of all tiles visible to a player
+    #not really useful as an actual player, but is extremely useful for botstuff
+    def visible_tiles(self, game):
+        visible = Tiles()
+        for player in game.players:
+            for meld in player.melds.melds:
+                visible.add_tiles(meld)
+            visible.add_tiles(player.discards)
+        visible.add_tiles(self.hand)
+        visible.add_tiles(game.dora)
+        return visible
+    
     async def user_input(self, query, timeout = 25.0):
         dm = self.disc.dm_channel
         if not dm:

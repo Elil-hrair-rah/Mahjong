@@ -699,6 +699,21 @@ async def leave_game(ctx):
         await ctx.send('Game abandoned successfully')
     else:
         await ctx.send('You are not in a game')
+        
+@discordclient.command()
+async def visible(ctx):
+    """Displays a list of all tiles visible to you at the current moment.
+    Might not display the most recently drawn tile if you use this command
+    while being prompted to discard.
+    """
+    
+    if ctx.author in active_users:
+        game = [game for game in active_games if game.match_id == active_users[ctx.author]][0]
+        user = [player for player in game.players if ctx.author == player.disc][0]
+        tiles = user.visible_tiles(game)
+        await ctx.send(str(tiles))
+    else:
+        await ctx.send('You are not in a game')
     
 @discordclient.command()
 async def changelog(ctx):
